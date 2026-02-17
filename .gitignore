@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+
+# Node
+node_modules
+npm-debug.log*
+.next
+out
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs
+*.log
+
+# IDE
+.vscode/
+.idea/
