@@ -37,9 +37,9 @@ export function SiteHeader() {
           </div>
 
           <div className="authRow">
-            <button className="signupBtn" type="button">
+            <Link href="/register" className="signupBtn">
               Sign Up
-            </button>
+            </Link>
             <Link href="/login" className="loginLink">
               Login
             </Link>

@@ -1,4 +1,5 @@
 import { Fragment } from "react";
+import { Input } from "@/components/ui/input";
 
 const EVENT_TYPES = ["Live Music", "Concert", "DJ Set", "Comedy Show"];
 
@@ -13,23 +14,23 @@ export function FilterSidebar({ heading = "Filters" }: FilterSidebarProps) {
 
       <label className="filterField">
         <span>Search</span>
-        <input type="text" placeholder="Search events..." />
+        <Input type="text" placeholder="Search events..." />
       </label>
 
       <label className="filterField">
         <span>Location</span>
         <div className="inlineFields">
-          <input type="text" placeholder="City" />
-          <input type="text" placeholder="State" />
-          <input type="text" placeholder="ZIP" />
+          <Input type="text" placeholder="City" />
+          <Input type="text" placeholder="State" />
+          <Input type="text" placeholder="ZIP" />
         </div>
       </label>
 
       <label className="filterField">
         <span>Date</span>
         <div className="inlineFields twoCol">
-          <input type="text" placeholder="From" />
-          <input type="text" placeholder="To" />
+          <Input type="text" placeholder="From" />
+          <Input type="text" placeholder="To" />
         </div>
       </label>
 

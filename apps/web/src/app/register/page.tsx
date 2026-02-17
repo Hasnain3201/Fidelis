@@ -2,24 +2,26 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-export default function LoginPage() {
+export default function RegisterPage() {
   return (
     <section className="siteSection pageAuth">
       <div className="siteContainer">
         <div className="authCard">
-          <h1>Login</h1>
-          <p className="meta">Sign in to save favorites, follow artists, and manage venue/artist workflows.</p>
+          <h1>Create Account</h1>
+          <p className="meta">Register as a user, artist, or venue owner.</p>
 
           <div className="authForm">
+            <Input type="text" label="Full Name" placeholder="Jane Doe" />
             <Input type="email" label="Email" placeholder="you@example.com" />
-            <Input type="password" label="Password" placeholder="********" />
+            <Input type="password" label="Password" placeholder="At least 8 characters" />
+            <Input type="text" label="Role" placeholder="user / artist / venue" />
             <Button type="button" fullWidth>
-              Continue
+              Create Account
             </Button>
           </div>
 
           <p className="authSwitch">
-            New to LIVEY? <Link href="/register">Create an account</Link>
+            Already have an account? <Link href="/login">Sign in</Link>
           </p>
         </div>
       </div>

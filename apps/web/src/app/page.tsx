@@ -1,15 +1,30 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { FilterBar } from "@/components/filter-bar";
 import { FilterSidebar } from "@/components/filter-sidebar";
 import { EventShowcaseCard } from "@/components/showcase-cards";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { EVENT_ITEMS } from "@/lib/mock-content";
 
 const QUICK_FILTERS = ["This Weekend", "Free Events", "Live Music", "Comedy Shows", "DJ Sets"];
 
+function matchesQuickFilter(price: string, tags: string[], subtitle: string, activeQuick: string): boolean {
+  if (activeQuick === "This Weekend") return true;
+  if (activeQuick === "Free Events") return price.toLowerCase().includes("free") || price.includes("$0");
+  if (activeQuick === "Live Music") return tags.some((tag) => tag.toLowerCase().includes("live"));
+  if (activeQuick === "Comedy Shows") return subtitle.toLowerCase().includes("comedy");
+  if (activeQuick === "DJ Sets") return subtitle.toLowerCase().includes("dj");
+  return true;
+}
+
 export default function HomePage() {
+  const router = useRouter();
   const [searchText, setSearchText] = useState("");
   const [locationText, setLocationText] = useState("");
+  const [activeQuick, setActiveQuick] = useState(QUICK_FILTERS[0]);
 
   const featuredEvents = EVENT_ITEMS.slice(0, 4);
 
@@ -25,10 +40,18 @@ export default function HomePage() {
         event.venue.toLowerCase().includes(search);
 
       const locationMatch = !location || event.location.toLowerCase().includes(location);
+      const quickMatch = matchesQuickFilter(event.price, event.tags, event.subtitle, activeQuick);
 
-      return searchMatch && locationMatch;
+      return searchMatch && locationMatch && quickMatch;
     });
-  }, [locationText, searchText]);
+  }, [activeQuick, locationText, searchText]);
+
+  function openSearchResults() {
+    const params = new URLSearchParams();
+    if (searchText.trim()) params.set("query", searchText.trim());
+    if (locationText.trim()) params.set("location", locationText.trim());
+    router.push(`/search?${params.toString()}`);
+  }
 
   return (
     <>
@@ -47,28 +70,22 @@ export default function HomePage() {
           </p>
 
           <div className="heroSearchRow">
-            <input
+            <Input
               value={searchText}
               onChange={(event) => setSearchText(event.target.value)}
               placeholder="Search events, artists, venues"
             />
-            <input
+            <Input
               value={locationText}
               onChange={(event) => setLocationText(event.target.value)}
               placeholder="City, State or ZIP"
             />
-            <button type="button" className="heroSearchBtn">
+            <Button type="button" className="heroSearchBtn" onClick={openSearchResults}>
               Search
-            </button>
+            </Button>
           </div>
 
-          <div className="quickRow">
-            {QUICK_FILTERS.map((item) => (
-              <span key={item} className="quickPill">
-                {item}
-              </span>
-            ))}
-          </div>
+          <FilterBar items={QUICK_FILTERS} activeItem={activeQuick} onSelect={setActiveQuick} />
 
           <div className="heroStats">
             <div className="heroStat">
@@ -91,10 +108,10 @@ export default function HomePage() {
         <div className="siteContainer">
           <div className="sectionHeader">
             <div>
-                  <h2>Featured Events</h2>
-                  <p>Hand-picked experiences you&apos;ll love</p>
-                </div>
-            <a className="sectionLink" href="#">
+              <h2>Featured Events</h2>
+              <p>Hand-picked experiences you&apos;ll love</p>
+            </div>
+            <a className="sectionLink" href="/search">
               View All
             </a>
           </div>
