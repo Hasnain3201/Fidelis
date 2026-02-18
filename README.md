@@ -61,19 +61,3 @@ npm run dev:api
 
 - Web: `http://localhost:3000`
 - API docs: `http://localhost:8000/docs`
-
-## Week 1 Frontend Status
-
-- Week 1 frontend requirements are implemented and verified.
-- See `docs/week1-frontend-audit.md` for a full checklist mapped to the timeline.
-
-Implemented frontend routes:
-
-- `/` (Home / Zip search)
-- `/search` (Search Results)
-- `/events/[id]` (Event Detail placeholder)
-- `/login`
-- `/register`
-- `/dashboard` (User Dashboard placeholder)
-- `/venues/dashboard` (Venue Dashboard placeholder)
-- `/venues/create-event` (Create Event placeholder)
