@@ -12,6 +12,16 @@ class EventSummary(BaseModel):
     category: str
     zip_code: str = Field(pattern=r"^\d{5}$")
 
+class EventDetail(BaseModel):
+    id: str
+    title: str
+    description: str
+    venue_name: str
+    category: str
+    start_time: datetime
+    end_time: datetime
+    zip_code: str = Field(pattern=r'^\d{5}$')
+    ticket_url: Optional[str] = None
 
 class EventCreate(BaseModel):
     title: str = Field(min_length=2, max_length=140)
@@ -21,7 +31,6 @@ class EventCreate(BaseModel):
     end_time: datetime
     zip_code: str = Field(pattern=r"^\d{5}$")
     ticket_url: Optional[str] = None
-
 
 class EventCreated(BaseModel):
     id: str
