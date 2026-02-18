@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class EventSummary(BaseModel):
@@ -31,6 +31,13 @@ class EventCreate(BaseModel):
     end_time: datetime
     zip_code: str = Field(pattern=r"^\d{5}$")
     ticket_url: Optional[str] = None
+
+    @model_validator(mode="after")
+    def check_times(self):
+        if self.end_time <= self.start_time:
+            raise ValueError("end_time must be after start_time")
+        
+        return self
 
 class EventCreated(BaseModel):
     id: str

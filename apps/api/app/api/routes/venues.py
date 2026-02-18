@@ -26,4 +26,4 @@ def create_venue_event(
 ) -> EventCreated:
     _ = payload
     _ = user_id
-    return EventCreated(id=f"evt_{uuid4().hex[:10]}", status=f"accepted_{datetime.now(timezone.utc).isoformat()}")
+    return EventCreated(id=f"evt_{uuid4().hex[:10]}", status="created")
