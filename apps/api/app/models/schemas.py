@@ -12,6 +12,12 @@ class EventSummary(BaseModel):
     category: str
     zip_code: str = Field(pattern=r"^\d{5}$")
 
+class EventSearchResponse(BaseModel):
+    items: list[EventSummary]
+    page: int
+    limit: int
+    total: int
+
 class EventDetail(BaseModel):
     id: str
     title: str
