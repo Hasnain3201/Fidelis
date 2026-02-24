@@ -12,7 +12,7 @@ def get_supabase_client() -> Optional["Client"]:
     if not settings.supabase_url:
         return None
 
-    key = settings.supabase_service_role_key or settings.supabase_anon_key
+    key = settings.supabase_publishable_key or settings.supabase_secret_key
     if not key:
         return None
 
