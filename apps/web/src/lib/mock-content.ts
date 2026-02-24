@@ -5,6 +5,7 @@ export type EventItem = {
   description: string;
   dateLabel: string;
   timeLabel: string;
+  zipCode: string;
   location: string;
   venue: string;
   price: string;
@@ -42,6 +43,7 @@ export const EVENT_ITEMS: EventItem[] = [
     description: "An evening of smooth jazz standards and original compositions.",
     dateLabel: "Wed, Feb 14",
     timeLabel: "8:00 PM",
+    zipCode: "78701",
     location: "Austin, TX",
     venue: "The Blue Note Lounge",
     price: "$15 cover",
@@ -57,6 +59,7 @@ export const EVENT_ITEMS: EventItem[] = [
     description: "Rock out under the stars with Austin's favorite classic rock band.",
     dateLabel: "Fri, Feb 20",
     timeLabel: "7:00 PM",
+    zipCode: "78702",
     location: "Austin, TX",
     venue: "Sunset Amphitheater",
     price: "$25",
@@ -72,6 +75,7 @@ export const EVENT_ITEMS: EventItem[] = [
     description: "Get ready to laugh as Marcus Cole brings his hilarious observational comedy.",
     dateLabel: "Thu, Feb 22",
     timeLabel: "9:00 PM",
+    zipCode: "85001",
     location: "Phoenix, AZ",
     venue: "Laughing Cactus Comedy",
     price: "$20 cover",
@@ -87,6 +91,7 @@ export const EVENT_ITEMS: EventItem[] = [
     description: "Deep house and techno all night long. Prepare for an immersive dance floor.",
     dateLabel: "Sat, Feb 24",
     timeLabel: "10:00 PM",
+    zipCode: "77002",
     location: "Houston, TX",
     venue: "Warehouse 54",
     price: "$20 cover",
@@ -101,6 +106,7 @@ export const EVENT_ITEMS: EventItem[] = [
     description: "An 80s themed night with neon lights, retro decor, and DJ sets.",
     dateLabel: "Sat, Mar 2",
     timeLabel: "11:00 PM",
+    zipCode: "33139",
     location: "Miami, FL",
     venue: "The Velvet Room",
     price: "$30",
@@ -115,6 +121,7 @@ export const EVENT_ITEMS: EventItem[] = [
     description: "An acoustic evening featuring folk melodies and singer-songwriters.",
     dateLabel: "Sun, Mar 3",
     timeLabel: "7:30 PM",
+    zipCode: "97205",
     location: "Portland, OR",
     venue: "Community Hall",
     price: "$18",
@@ -129,6 +136,7 @@ export const EVENT_ITEMS: EventItem[] = [
     description: "R&B and soul band bringing smooth grooves and powerful vocals.",
     dateLabel: "Fri, Mar 8",
     timeLabel: "9:30 PM",
+    zipCode: "30303",
     location: "Atlanta, GA",
     venue: "Soul Stage",
     price: "$22",
@@ -143,6 +151,7 @@ export const EVENT_ITEMS: EventItem[] = [
     description: "Dreamy vocals, melodic hooks, and a high-energy late evening set.",
     dateLabel: "Thu, Mar 14",
     timeLabel: "8:30 PM",
+    zipCode: "60601",
     location: "Chicago, IL",
     venue: "Skylight Venue",
     price: "$24",
@@ -157,6 +166,7 @@ export const EVENT_ITEMS: EventItem[] = [
     description: "Reggae and electronic fusion night with immersive visuals.",
     dateLabel: "Sat, Mar 16",
     timeLabel: "10:30 PM",
+    zipCode: "92101",
     location: "San Diego, CA",
     venue: "Moonlight Hall",
     price: "$19",

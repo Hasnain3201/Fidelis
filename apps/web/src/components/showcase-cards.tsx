@@ -1,32 +1,40 @@
 import Image from "next/image";
+import Link from "next/link";
 import type { ArtistItem, EventItem, VenueItem } from "@/lib/mock-content";
 
 export function EventShowcaseCard({ item }: { item: EventItem }) {
   return (
     <article className="showCard">
-      <div className="mediaWrap">
-        <Image src={item.image} alt={item.title} fill sizes="(max-width: 760px) 100vw, (max-width: 1080px) 50vw, 25vw" />
-        {item.badge ? <span className="pillTop">{item.badge}</span> : null}
-      </div>
-
-      <div className="cardBody">
-        <div className="timeChip">
-          <span>{item.dateLabel}</span>
-          <strong>{item.timeLabel}</strong>
+      <Link href={`/events/${item.id}`} className="showCardLink" aria-label={`Open ${item.title} details`}>
+        <div className="mediaWrap">
+          <Image
+            src={item.image}
+            alt={item.title}
+            fill
+            sizes="(max-width: 760px) 100vw, (max-width: 1080px) 50vw, 25vw"
+          />
+          {item.badge ? <span className="pillTop">{item.badge}</span> : null}
         </div>
 
-        <div className="tagRow">
-          {item.tags.map((tag) => (
-            <span key={tag} className="tagPill">
-              {tag}
-            </span>
-          ))}
-        </div>
+        <div className="cardBody">
+          <div className="timeChip">
+            <span>{item.dateLabel}</span>
+            <strong>{item.timeLabel}</strong>
+          </div>
 
-        <h3>{item.title}</h3>
-        <p>{item.description}</p>
-        <div className="cardMeta">{item.location}</div>
-      </div>
+          <div className="tagRow">
+            {item.tags.map((tag) => (
+              <span key={tag} className="tagPill">
+                {tag}
+              </span>
+            ))}
+          </div>
+
+          <h3>{item.title}</h3>
+          <p>{item.description}</p>
+          <div className="cardMeta">{item.location}</div>
+        </div>
+      </Link>
     </article>
   );
 }

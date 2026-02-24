@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { type FormEvent, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FilterBar } from "@/components/filter-bar";
 import { FilterSidebar } from "@/components/filter-sidebar";
@@ -8,6 +8,7 @@ import { EventShowcaseCard } from "@/components/showcase-cards";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EVENT_ITEMS } from "@/lib/mock-content";
+import { isValidZipCode, normalizeZipInput, zipMatchesEvent } from "@/lib/zip";
 
 const QUICK_FILTERS = ["This Weekend", "Free Events", "Live Music", "Comedy Shows", "DJ Sets"];
 
@@ -22,15 +23,16 @@ function matchesQuickFilter(price: string, tags: string[], subtitle: string, act
 
 export default function HomePage() {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [searchText, setSearchText] = useState("");
-  const [locationText, setLocationText] = useState("");
+  const [zipCode, setZipCode] = useState("");
+  const [zipError, setZipError] = useState("");
   const [activeQuick, setActiveQuick] = useState(QUICK_FILTERS[0]);
 
   const featuredEvents = EVENT_ITEMS.slice(0, 4);
 
   const visibleEvents = useMemo(() => {
     const search = searchText.trim().toLowerCase();
-    const location = locationText.trim().toLowerCase();
 
     return EVENT_ITEMS.filter((event) => {
       const searchMatch =
@@ -39,18 +41,35 @@ export default function HomePage() {
         event.description.toLowerCase().includes(search) ||
         event.venue.toLowerCase().includes(search);
 
-      const locationMatch = !location || event.location.toLowerCase().includes(location);
       const quickMatch = matchesQuickFilter(event.price, event.tags, event.subtitle, activeQuick);
+      const zipMatch = zipMatchesEvent(zipCode, event.zipCode);
 
-      return searchMatch && locationMatch && quickMatch;
+      return searchMatch && zipMatch && quickMatch;
     });
-  }, [activeQuick, locationText, searchText]);
+  }, [activeQuick, searchText, zipCode]);
 
-  function openSearchResults() {
+  function validateZipInput(value: string): string {
+    if (!value.trim()) return "ZIP code is required to search.";
+    if (!isValidZipCode(value)) return "Use a valid US ZIP code (e.g., 78701 or 78701-1234).";
+    return "";
+  }
+
+  function openSearchResults(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    const zipValidationMessage = validateZipInput(zipCode);
+    if (zipValidationMessage) {
+      setZipError(zipValidationMessage);
+      return;
+    }
+
+    const normalizedQuery = searchText.trim().replace(/\s+/g, " ").slice(0, 120);
     const params = new URLSearchParams();
-    if (searchText.trim()) params.set("query", searchText.trim());
-    if (locationText.trim()) params.set("location", locationText.trim());
-    router.push(`/search?${params.toString()}`);
+    if (normalizedQuery) params.set("query", normalizedQuery);
+    params.set("zip", zipCode);
+
+    startTransition(() => {
+      router.push(`/search?${params.toString()}`);
+    });
   }
 
   return (
@@ -69,21 +88,44 @@ export default function HomePage() {
             entertainment scene, all in one place.
           </p>
 
-          <div className="heroSearchRow">
-            <Input
-              value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Search events, artists, venues"
-            />
-            <Input
-              value={locationText}
-              onChange={(event) => setLocationText(event.target.value)}
-              placeholder="City, State or ZIP"
-            />
-            <Button type="button" className="heroSearchBtn" onClick={openSearchResults}>
-              Search
-            </Button>
-          </div>
+          <form className="heroSearchForm" onSubmit={openSearchResults} noValidate>
+            <div className="heroSearchRow">
+              <Input
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder="Search events, artists, venues"
+                maxLength={120}
+                aria-label="Search term"
+              />
+              <Input
+                value={zipCode}
+                onChange={(event) => {
+                  const nextZip = normalizeZipInput(event.target.value);
+                  setZipCode(nextZip);
+                  if (zipError) {
+                    setZipError(validateZipInput(nextZip));
+                  }
+                }}
+                onBlur={() => setZipError(validateZipInput(zipCode))}
+                placeholder="ZIP code"
+                inputMode="numeric"
+                autoComplete="postal-code"
+                maxLength={10}
+                aria-label="ZIP code"
+                aria-invalid={Boolean(zipError)}
+              />
+              <Button type="submit" className="heroSearchBtn" disabled={isPending}>
+                {isPending ? "Searching..." : "Search"}
+              </Button>
+            </div>
+            {zipError ? (
+              <p className="fieldError" role="alert">
+                {zipError}
+              </p>
+            ) : (
+              <p className="fieldHint">Search is ZIP-driven in Week 2. Try 78701, 85001, 77002, or 60601.</p>
+            )}
+          </form>
 
           <FilterBar items={QUICK_FILTERS} activeItem={activeQuick} onSelect={setActiveQuick} />
 
