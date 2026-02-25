@@ -122,9 +122,7 @@ export default function HomePage() {
               <p className="fieldError" role="alert">
                 {zipError}
               </p>
-            ) : (
-              <p className="fieldHint">Search is ZIP-driven in Week 2. Try 78701, 85001, 77002, or 60601.</p>
-            )}
+            ) : null}
           </form>
 
           <FilterBar items={QUICK_FILTERS} activeItem={activeQuick} onSelect={setActiveQuick} />
