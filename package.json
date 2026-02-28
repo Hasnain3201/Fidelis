@@ -6,7 +6,7 @@
   "workspaces": [
   "apps/*",
   "packages/*",
-  "web"
+  "apps/web"
 ],
   "scripts": {
     "dev": "echo \"Run npm run dev:web and npm run dev:api in separate terminals\"",
