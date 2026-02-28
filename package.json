@@ -4,9 +4,10 @@
   "version": "0.1.0",
   "description": "LIVEY monorepo (Next.js + FastAPI + Supabase)",
   "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "apps/*",
+  "packages/*",
+  "web"
+],
   "scripts": {
     "dev": "echo \"Run npm run dev:web and npm run dev:api in separate terminals\"",
     "dev:web": "npm run dev --workspace @fidelis/web",
