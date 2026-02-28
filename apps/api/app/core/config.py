@@ -7,11 +7,17 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
     cors_origins: str = "http://localhost:3000"
 
+    # Supabase (match your .env keys)
     supabase_url: str = ""
-    supabase_publishable_key: str = ""
-    supabase_secret_key: str = ""
+    supabase_anon_key: str = ""
+    supabase_service_role_key: str = ""
+    supabase_jwt_secret: str = ""
 
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore",  # prevents crashes if .env has extra keys
+    )
 
     @property
     def allowed_origins(self) -> list[str]:
