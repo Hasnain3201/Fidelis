@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { clearAuthSession, getAuthChangeEventName, getStoredAuthSession, type AuthSession } from "@/lib/auth";
 
 const NAV_ITEMS = [
   { href: "/", label: "Events" },
@@ -9,8 +11,40 @@ const NAV_ITEMS = [
   { href: "/artists", label: "Artists" },
 ];
 
+function getDashboardHref(session: AuthSession): string {
+  if (session.role === "venue") return "/venues/dashboard";
+  if (session.role === "artist") return "/artists/dashboard";
+  return "/dashboard";
+}
+
 export function SiteHeader() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [session, setSession] = useState<AuthSession | null>(null);
+
+  useEffect(() => {
+    setSession(getStoredAuthSession());
+
+    function syncSession() {
+      setSession(getStoredAuthSession());
+    }
+
+    const authChangeEvent = getAuthChangeEventName();
+    window.addEventListener("storage", syncSession);
+    window.addEventListener(authChangeEvent, syncSession);
+
+    return () => {
+      window.removeEventListener("storage", syncSession);
+      window.removeEventListener(authChangeEvent, syncSession);
+    };
+  }, []);
+
+  function onLogout() {
+    clearAuthSession();
+    setSession(null);
+    router.push("/");
+    router.refresh();
+  }
 
   return (
     <header>
@@ -37,12 +71,26 @@ export function SiteHeader() {
           </div>
 
           <div className="authRow">
-            <Link href="/register" className="signupBtn">
-              Sign Up
-            </Link>
-            <Link href="/login" className="loginLink">
-              Login
-            </Link>
+            {session ? (
+              <>
+                <span className="authBadge">{session.role}</span>
+                <Link href={getDashboardHref(session)} className="signupBtn">
+                  Dashboard
+                </Link>
+                <button type="button" className="logoutBtn" onClick={onLogout}>
+                  Logout
+                </button>
+              </>
+            ) : (
+              <>
+                <Link href="/register" className="signupBtn">
+                  Sign Up
+                </Link>
+                <Link href="/login" className="loginLink">
+                  Login
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </div>
