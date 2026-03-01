@@ -66,39 +66,36 @@ def signup(payload: SignupRequest):
                 "password": payload.password,
                 "email_confirm": True,
                 "user_metadata": {
-                    "full_name": payload.full_name or "",
-                    "role": payload.role
-                }
+                    "display_name": payload.full_name or "",
+                    "role": payload.role,
+                },
             }
         )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to create auth user: {e}"
+            detail=f"Failed to create auth user: {e}",
         )
-    
+
     created = getattr(res, "user", None)
     if not created or not getattr(created, "id", None):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase auth user creation returned no user id"
+            detail="Supabase auth user creation returned no user id",
         )
-    
+
     user_id = created.id
 
     try:
-        db_client = get_supabase_client()
-        if db_client is None:
-            raise RuntimeError("Supabase DB client not configured")
-
         insert_payload = {
             "id": user_id,
-            "email": payload.email,
-            "name": payload.full_name or "",
             "role": payload.role,
+            "display_name": payload.full_name or "",
+            "home_zip": None,
         }
 
-        db_client.table("users").insert(insert_payload).execute()
+        admin_client.table("profiles").upsert(insert_payload, on_conflict="id").execute()
+
     except Exception as e:
         try:
             admin_client.auth.admin.delete_user(user_id)
@@ -107,7 +104,7 @@ def signup(payload: SignupRequest):
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"User created in auth but failed to create app user row: {e}",
+            detail=f"User created in auth but failed to create profile row: {e}",
         )
 
     return {"status": "ok", "user_id": user_id, "email": payload.email}
