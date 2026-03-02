@@ -111,7 +111,7 @@ async function getJsonOrThrow<T>(response: Response): Promise<T> {
 
 async function resolveUserRole(userId: string, accessToken: string): Promise<UserRole> {
   try {
-    const response = await fetch(`${API_BASE}/api/v1/users/me`, {
+    const response = await fetch(`${API_BASE}/api/v1/auth/me`, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${accessToken}`,

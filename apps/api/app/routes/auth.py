@@ -1,7 +1,11 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
+
+from app.core.auth import require_user_id
+
 from app.db.supabase import get_supabase_client
 from app.db.supabase_admin import get_supabase_admin_client
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
@@ -15,6 +19,26 @@ class SignupRequest(BaseModel):
     full_name: str | None = None
     role: str = "user"
 
+@router.get("/me")
+def me(user_id: str = Depends(require_user_id)):
+    admin = get_supabase_admin_client()
+    response = (
+        admin
+        .table("profiles")
+        .select("id, role, display_name, home_zip")
+        .eq("id", user_id)
+        .single()
+        .execute()
+    )
+
+    data = response.data or {}
+
+    return {
+        "id": data.get("id", user_id),
+        "role": data.get("role", "user"),
+        "display_name": data.get("display_name"),
+        "home_zip": data.get("home_zip")
+    }
 
 @router.post("/login")
 def login(payload: LoginRequest):
