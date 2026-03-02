@@ -1,8 +1,11 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { createVenueEvent } from "@/lib/api";
+import { getStoredAuthSession, type AuthSession } from "@/lib/auth";
 import { isValidZipCode, normalizeZipInput } from "@/lib/zip";
 
 type PublishMode = "draft" | "publish";
@@ -12,7 +15,8 @@ type CreateEventFormState = {
   description: string;
   category: string;
   date: string;
-  time: string;
+  startTime: string;
+  endTime: string;
   zipCode: string;
   venueName: string;
   ticketUrl: string;
@@ -25,9 +29,10 @@ type CreateEventFormState = {
 const INITIAL_FORM_STATE: CreateEventFormState = {
   title: "",
   description: "",
-  category: "Live Music",
+  category: "live-music",
   date: "",
-  time: "",
+  startTime: "",
+  endTime: "",
   zipCode: "",
   venueName: "",
   ticketUrl: "",
@@ -46,12 +51,31 @@ function isSafeHttpUrl(rawUrl: string): boolean {
   }
 }
 
+function buildDateTime(date: string, time: string): Date | null {
+  if (!date || !time) return null;
+  const combined = new Date(`${date}T${time}:00`);
+  if (Number.isNaN(combined.getTime())) return null;
+  return combined;
+}
+
+function toCategoryLabel(value: string): string {
+  return value
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 export default function CreateEventPage() {
+  const [session, setSession] = useState<AuthSession | null>(null);
   const [form, setForm] = useState<CreateEventFormState>(INITIAL_FORM_STATE);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("");
+  const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  useEffect(() => {
+    setSession(getStoredAuthSession());
+  }, []);
 
   function updateField<K extends keyof CreateEventFormState>(field: K, value: CreateEventFormState[K]) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -69,7 +93,8 @@ export default function CreateEventPage() {
     }
 
     if (!form.date) nextErrors.date = "Date is required.";
-    if (!form.time) nextErrors.time = "Time is required.";
+    if (!form.startTime) nextErrors.startTime = "Start time is required.";
+    if (!form.endTime) nextErrors.endTime = "End time is required.";
     if (!form.venueName.trim()) nextErrors.venueName = "Venue name is required.";
 
     if (!form.zipCode) {
@@ -96,11 +121,17 @@ export default function CreateEventPage() {
       }
     }
 
-    if (mode === "publish") {
-      const eventDate = form.date ? new Date(`${form.date}T${form.time || "00:00"}`) : null;
-      if (!eventDate || Number.isNaN(eventDate.getTime()) || eventDate.getTime() <= Date.now()) {
-        nextErrors.date = "Enter a valid future date and time.";
-      }
+    const startDate = buildDateTime(form.date, form.startTime);
+    const endDate = buildDateTime(form.date, form.endTime);
+
+    if (!startDate) nextErrors.startTime = "Enter a valid start time.";
+    if (!endDate) nextErrors.endTime = "Enter a valid end time.";
+    if (startDate && endDate && endDate.getTime() <= startDate.getTime()) {
+      nextErrors.endTime = "End time must be after start time.";
+    }
+
+    if (mode === "publish" && startDate && startDate.getTime() <= Date.now()) {
+      nextErrors.startTime = "Event start must be in the future.";
     }
 
     setErrors(nextErrors);
@@ -108,17 +139,54 @@ export default function CreateEventPage() {
   }
 
   async function submitForm(mode: PublishMode) {
-    setStatusMessage("");
+    setStatusMessage(null);
     if (!validateForm(mode)) return;
 
-    if (mode === "draft") setIsSavingDraft(true);
-    if (mode === "publish") setIsPublishing(true);
+    if (mode === "draft") {
+      setIsSavingDraft(true);
+      await new Promise((resolve) => window.setTimeout(resolve, 300));
+      setStatusMessage({ type: "success", text: "Draft saved locally (UI only)." });
+      setIsSavingDraft(false);
+      return;
+    }
 
-    await new Promise((resolve) => window.setTimeout(resolve, 700));
-    setStatusMessage(mode === "draft" ? "Draft saved (UI only)." : "Event published in UI mode. API wiring is Week 3.");
+    if (!session) {
+      setStatusMessage({ type: "error", text: "Sign in first to publish events." });
+      return;
+    }
 
-    if (mode === "draft") setIsSavingDraft(false);
-    if (mode === "publish") setIsPublishing(false);
+    if (session.role !== "venue") {
+      setStatusMessage({ type: "error", text: "Venue role is required to publish events." });
+      return;
+    }
+
+    const startDate = buildDateTime(form.date, form.startTime);
+    const endDate = buildDateTime(form.date, form.endTime);
+    if (!startDate || !endDate) {
+      setStatusMessage({ type: "error", text: "Invalid date/time values." });
+      return;
+    }
+
+    try {
+      setIsPublishing(true);
+      const payload = {
+        title: form.title.trim(),
+        description: form.description.trim(),
+        category: form.category,
+        start_time: startDate.toISOString(),
+        end_time: endDate.toISOString(),
+        zip_code: form.zipCode.slice(0, 5),
+        ticket_url: form.ticketUrl.trim() || null,
+      };
+
+      const result = await createVenueEvent(payload, session);
+      setStatusMessage({ type: "success", text: `Event published (id: ${result.id}).` });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to publish event.";
+      setStatusMessage({ type: "error", text: message });
+    } finally {
+      setIsPublishing(false);
+    }
   }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -131,7 +199,14 @@ export default function CreateEventPage() {
       <div className="siteContainer createEventLayout">
         <div className="card">
           <h1>Create Event</h1>
-          <p className="meta">Complete venue publishing flow (UI only) with validation and staged submit states.</p>
+          <p className="meta">Week 3 integration: publishes to backend `POST /api/v1/venues/events`.</p>
+          {!session ? (
+            <p className="fieldHint">
+              Sign in as a venue account before publishing. <Link href="/login">Go to login</Link>.
+            </p>
+          ) : (
+            <p className="fieldHint">Signed in as role: {session.role}</p>
+          )}
 
           <form className="createEventForm" onSubmit={onSubmit} noValidate>
             <Input
@@ -169,15 +244,15 @@ export default function CreateEventPage() {
             <label className="uiInputWrap">
               <span className="uiInputLabel">Category</span>
               <select className="uiSelect" value={form.category} onChange={(event) => updateField("category", event.target.value)}>
-                <option value="Live Music">Live Music</option>
-                <option value="Concert">Concert</option>
-                <option value="Comedy Show">Comedy Show</option>
-                <option value="DJ Set">DJ Set</option>
-                <option value="Community">Community</option>
+                <option value="live-music">Live Music</option>
+                <option value="comedy">Comedy</option>
+                <option value="dance">Dance</option>
+                <option value="arts">Arts</option>
+                <option value="festival">Festival</option>
               </select>
             </label>
 
-            <div className="inlineFields twoCol">
+            <div className="inlineFields threeCol">
               <label className="uiInputWrap">
                 <span className="uiInputLabel">Date</span>
                 <Input
@@ -189,12 +264,22 @@ export default function CreateEventPage() {
                 />
               </label>
               <label className="uiInputWrap">
-                <span className="uiInputLabel">Time</span>
+                <span className="uiInputLabel">Start Time</span>
                 <Input
                   type="time"
-                  value={form.time}
-                  onChange={(event) => updateField("time", event.target.value)}
-                  aria-invalid={Boolean(errors.time)}
+                  value={form.startTime}
+                  onChange={(event) => updateField("startTime", event.target.value)}
+                  aria-invalid={Boolean(errors.startTime)}
+                  required
+                />
+              </label>
+              <label className="uiInputWrap">
+                <span className="uiInputLabel">End Time</span>
+                <Input
+                  type="time"
+                  value={form.endTime}
+                  onChange={(event) => updateField("endTime", event.target.value)}
+                  aria-invalid={Boolean(errors.endTime)}
                   required
                 />
               </label>
@@ -204,9 +289,14 @@ export default function CreateEventPage() {
                 {errors.date}
               </p>
             ) : null}
-            {errors.time ? (
+            {errors.startTime ? (
               <p className="fieldError" role="alert">
-                {errors.time}
+                {errors.startTime}
+              </p>
+            ) : null}
+            {errors.endTime ? (
+              <p className="fieldError" role="alert">
+                {errors.endTime}
               </p>
             ) : null}
 
@@ -321,7 +411,9 @@ export default function CreateEventPage() {
             </div>
           </form>
 
-          {statusMessage ? <p className="statusBanner success">{statusMessage}</p> : null}
+          {statusMessage ? (
+            <p className={`statusBanner ${statusMessage.type === "success" ? "success" : "error"}`}>{statusMessage.text}</p>
+          ) : null}
         </div>
 
         <aside className="card createEventPreview">
@@ -329,9 +421,10 @@ export default function CreateEventPage() {
           {form.title.trim() ? (
             <>
               <h3>{form.title.trim()}</h3>
-              <p className="meta">{form.category}</p>
+              <p className="meta">{toCategoryLabel(form.category)}</p>
               <p className="meta">
-                {form.date || "Date TBD"} {form.time ? `at ${form.time}` : ""}
+                {form.date || "Date TBD"} {form.startTime ? `at ${form.startTime}` : ""}
+                {form.endTime ? ` - ${form.endTime}` : ""}
               </p>
               <p className="meta">
                 {form.venueName || "Venue TBD"} {form.zipCode ? `• ${form.zipCode}` : ""}

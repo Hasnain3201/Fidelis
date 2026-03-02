@@ -2,8 +2,10 @@
 
 import { type FormEvent, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { saveAuthSession, signUpWithSupabase } from "@/lib/auth";
 
 const ACCOUNT_ROLES = ["user", "artist", "venue"] as const;
 
@@ -20,6 +22,7 @@ function validatePassword(password: string): string {
 }
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -29,7 +32,7 @@ export default function RegisterPage() {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("");
+  const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   function validateForm() {
     const nextErrors: Record<string, string> = {};
@@ -52,15 +55,45 @@ export default function RegisterPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setStatusMessage("");
+    setStatusMessage(null);
     if (!validateForm()) return;
 
-    setIsSubmitting(true);
-    await new Promise((resolve) => window.setTimeout(resolve, 600));
-    setStatusMessage("Registration form validated. Account creation API integration is planned for Week 3.");
-    setPassword("");
-    setConfirmPassword("");
-    setIsSubmitting(false);
+    try {
+      setIsSubmitting(true);
+      const result = await signUpWithSupabase(fullName.trim(), email.trim().toLowerCase(), password, role);
+
+      setPassword("");
+      setConfirmPassword("");
+
+      if (result.session) {
+        saveAuthSession(result.session);
+        setStatusMessage({ type: "success", text: "Account created and signed in." });
+        const destination =
+          result.session.role === "venue"
+            ? "/venues/dashboard"
+            : result.session.role === "artist"
+              ? "/artists/dashboard"
+              : "/dashboard";
+        router.push(destination);
+        router.refresh();
+        return;
+      }
+
+      if (result.requiresEmailVerification) {
+        setStatusMessage({
+          type: "success",
+          text: "Account created. Check your email to verify the account before signing in.",
+        });
+        return;
+      }
+
+      setStatusMessage({ type: "success", text: "Account created successfully." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to create account right now.";
+      setStatusMessage({ type: "error", text: message });
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -159,7 +192,9 @@ export default function RegisterPage() {
             </Button>
           </form>
 
-          {statusMessage ? <p className="statusBanner success">{statusMessage}</p> : null}
+          {statusMessage ? (
+            <p className={`statusBanner ${statusMessage.type === "success" ? "success" : "error"}`}>{statusMessage.text}</p>
+          ) : null}
 
           <p className="authSwitch">
             Already have an account? <Link href="/login">Sign in</Link>

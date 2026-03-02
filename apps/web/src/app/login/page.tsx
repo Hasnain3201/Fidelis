@@ -2,8 +2,10 @@
 
 import { type FormEvent, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { saveAuthSession, signInWithSupabase } from "@/lib/auth";
 
 function validateEmail(email: string): string {
   if (!email) return "Email is required.";
@@ -18,16 +20,17 @@ function validatePassword(password: string): string {
 }
 
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("");
+  const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setStatusMessage("");
+    setStatusMessage(null);
 
     const normalizedEmail = email.trim().toLowerCase();
     const nextEmailError = validateEmail(normalizedEmail);
@@ -37,11 +40,28 @@ export default function LoginPage() {
 
     if (nextEmailError || nextPasswordError) return;
 
-    setIsSubmitting(true);
-    await new Promise((resolve) => window.setTimeout(resolve, 500));
-    setStatusMessage("Login UI validated. Backend auth integration ships in Week 3.");
-    setPassword("");
-    setIsSubmitting(false);
+    try {
+      setIsSubmitting(true);
+      const session = await signInWithSupabase(normalizedEmail, password);
+      saveAuthSession(session);
+      setStatusMessage({ type: "success", text: "Signed in successfully." });
+      setPassword("");
+
+      const destination =
+        session.role === "venue"
+          ? "/venues/dashboard"
+          : session.role === "artist"
+            ? "/artists/dashboard"
+            : "/dashboard";
+
+      router.push(destination);
+      router.refresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to sign in right now.";
+      setStatusMessage({ type: "error", text: message });
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -91,7 +111,9 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          {statusMessage ? <p className="statusBanner success">{statusMessage}</p> : null}
+          {statusMessage ? (
+            <p className={`statusBanner ${statusMessage.type === "success" ? "success" : "error"}`}>{statusMessage.text}</p>
+          ) : null}
 
           <p className="authSwitch">
             New to LIVEY? <Link href="/register">Create an account</Link>
