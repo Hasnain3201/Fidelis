@@ -8,10 +8,7 @@ from app.db.supabase_admin import get_supabase_admin_client
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-
-class LoginRequest(BaseModel):
-    email: str
-    password: str
+ALLOWED_PUBLIC_ROLES = {"user", "venue", "artist"}
 
 class SignupRequest(BaseModel):
     email: EmailStr
@@ -22,6 +19,9 @@ class SignupRequest(BaseModel):
 @router.get("/me")
 def me(user_id: str = Depends(require_user_id)):
     admin = get_supabase_admin_client()
+    if admin is None:
+        raise HTTPException(status_code=500, detail="Supabase admin client not configured")
+    
     response = (
         admin
         .table("profiles")
@@ -40,48 +40,17 @@ def me(user_id: str = Depends(require_user_id)):
         "home_zip": data.get("home_zip")
     }
 
-@router.post("/login")
-def login(payload: LoginRequest):
-    client = get_supabase_client()
-
-    if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Supabase client not configured"
-        )
-
-    try:
-        # Basic check from users table
-        response = (
-            client.table("users")
-            .select("id,email,password")
-            .eq("email", payload.email)
-            .single()
-            .execute()
-        )
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
-        )
-
-    user = response.data
-
-    if not user or user["password"] != payload.password:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
-        )
-
-    return {
-        "message": "Login successful",
-        "user_id": user["id"],
-        "email": user["email"]
-    }
-
 @router.post("/signup")
 def signup(payload: SignupRequest):
     admin_client = get_supabase_admin_client()
+    if admin_client is None:
+        raise HTTPException(status_code=500, detail="Supabase admin client not configured")
+
+    if len(payload.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    if payload.role not in ALLOWED_PUBLIC_ROLES:
+        raise HTTPException(status_code=400, detail="Invalid role")
 
     try:
         res = admin_client.auth.admin.create_user(
