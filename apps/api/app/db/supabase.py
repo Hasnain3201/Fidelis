@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from app.core.config import settings
 
@@ -8,18 +8,11 @@ if TYPE_CHECKING:
 
 
 @lru_cache(maxsize=1)
-def get_supabase_client() -> Optional["Client"]:
+def get_supabase_client() -> "Client":
     if not settings.supabase_url:
-        return None
+        raise RuntimeError("SUPABASE_URL is not set")
+    if not settings.supabase_anon_key:
+        raise RuntimeError("SUPABASE_ANON_KEY is not set")
 
-    key = settings.supabase_publishable_key or settings.supabase_secret_key
-    if not key:
-        return None
-
-    try:
-        from supabase import create_client
-    except Exception:
-        # Keep local development working even if optional Supabase deps are partially installed.
-        return None
-
-    return create_client(settings.supabase_url, key)
+    from supabase import create_client
+    return create_client(settings.supabase_url, settings.supabase_anon_key)
