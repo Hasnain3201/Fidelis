@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { CopyLinkButton } from "@/components/copy-link-button";
 import { getEventDetail } from "@/lib/api";
 
 type EventDetailPageProps = {
@@ -117,9 +118,15 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
                   Tickets Unavailable
                 </Button>
               )}
+
+              {/* New: share / copy link */}
+              <CopyLinkButton />
+
+              {/* Existing (left as-is) */}
               <Button type="button" variant="secondary">
                 Save Event
               </Button>
+
               <Link href="/search" className="pageActionLink secondary">
                 Back to Search
               </Link>
