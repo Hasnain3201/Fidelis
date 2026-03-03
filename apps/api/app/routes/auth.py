@@ -89,6 +89,9 @@ def signup(payload: SignupRequest):
 
         admin_client.table("profiles").upsert(insert_payload, on_conflict="id").execute()
 
+        if payload.role == "user":
+            admin_client.table("users").upsert({"id": user_id}, on_conflict="id").execute()
+
     except Exception as e:
         try:
             admin_client.auth.admin.delete_user(user_id)
