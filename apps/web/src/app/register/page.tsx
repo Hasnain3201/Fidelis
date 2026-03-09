@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { saveAuthSession, signUpWithSupabase } from "@/lib/auth";
+import { signUpWithSupabase } from "@/lib/auth";
 
 const ACCOUNT_ROLES = ["user", "artist", "venue"] as const;
 
@@ -60,34 +60,13 @@ export default function RegisterPage() {
 
     try {
       setIsSubmitting(true);
-      const result = await signUpWithSupabase(fullName.trim(), email.trim().toLowerCase(), password, role);
+      await signUpWithSupabase(fullName.trim(), email.trim().toLowerCase(), password, role);
 
       setPassword("");
       setConfirmPassword("");
-
-      if (result.session) {
-        saveAuthSession(result.session);
-        setStatusMessage({ type: "success", text: "Account created and signed in." });
-        const destination =
-          result.session.role === "venue"
-            ? "/venues/dashboard"
-            : result.session.role === "artist"
-              ? "/artists/dashboard"
-              : "/dashboard";
-        router.push(destination);
-        router.refresh();
-        return;
-      }
-
-      if (result.requiresEmailVerification) {
-        setStatusMessage({
-          type: "success",
-          text: "Account created. Check your email to verify the account before signing in.",
-        });
-        return;
-      }
-
-      setStatusMessage({ type: "success", text: "Account created successfully." });
+      setStatusMessage({ type: "success", text: "Account created. Please sign in." });
+      router.push("/login");
+      router.refresh();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to create account right now.";
       setStatusMessage({ type: "error", text: message });

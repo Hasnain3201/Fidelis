@@ -21,8 +21,8 @@ cp .env.example .env
 Then edit `.env` and fill in:
 
 - `SUPABASE_URL` – project URL from the Supabase dashboard (API settings).
-- `SUPABASE_ANON_KEY` – anon public API key.
-- `SUPABASE_SERVICE_ROLE_KEY` – service role key (used server-side only).
+- `SUPABASE_PUBLISHABLE_KEY` – publishable API key.
+- `SUPABASE_SECRET_KEY` – secret API key (used server-side only).
 
 You can also adjust:
 
@@ -67,7 +67,7 @@ You can run this SQL (via the dashboard or CLI) to insert a small set of example
 With dependencies installed, env configured, and the schema applied, start the FastAPI app:
 
 ```bash
-uvicorn app.main:app --reload --port 8000
+uvicorn main:app --reload --port 8000
 ```
 
 The OpenAPI docs will be available at `http://localhost:8000/docs`.

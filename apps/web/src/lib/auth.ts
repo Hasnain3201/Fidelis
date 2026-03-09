@@ -228,51 +228,21 @@ export async function signUpWithSupabase(
   password: string,
   requestedRole: UserRole,
 ): Promise<SignUpResult> {
-  assertSupabaseConfigured();
-
-  const response = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+  const response = await fetch(`${API_BASE}/api/v1/auth/signup`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       email,
       password,
-      data: {
-        display_name: fullName,
-        requested_role: requestedRole,
-      },
+      full_name: fullName,
+      role: requestedRole,
     }),
   });
 
-  const payload = await getJsonOrThrow<SupabaseSignUpResponse>(response);
-  if (!payload.access_token || !payload.expires_in) {
-    return {
-      session: null,
-      requiresEmailVerification: true,
-    };
-  }
-
-  const userId = getUserIdFromToken(payload.access_token, payload.user?.id);
-  if (!userId) {
-    throw new Error("Unable to resolve user id for newly registered account.");
-  }
-
-  const role = await resolveUserRole(userId, payload.access_token);
-  const session = toSession(
-    {
-      access_token: payload.access_token,
-      refresh_token: payload.refresh_token ?? "",
-      expires_in: payload.expires_in,
-      user: payload.user,
-    },
-    role,
-  );
+  await getJsonOrThrow<{ status: string; user_id?: string; email?: string }>(response);
 
   return {
-    session,
+    session: null,
     requiresEmailVerification: false,
   };
 }

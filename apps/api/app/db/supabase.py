@@ -11,8 +11,8 @@ if TYPE_CHECKING:
 def get_supabase_client() -> "Client":
     if not settings.supabase_url:
         raise RuntimeError("SUPABASE_URL is not set")
-    if not settings.supabase_anon_key:
-        raise RuntimeError("SUPABASE_ANON_KEY is not set")
+    if not settings.supabase_publishable_key:
+        raise RuntimeError("SUPABASE_PUBLISHABLE_KEY is not set")
 
     from supabase import create_client
-    return create_client(settings.supabase_url, settings.supabase_anon_key)
+    return create_client(settings.supabase_url, settings.supabase_publishable_key)
