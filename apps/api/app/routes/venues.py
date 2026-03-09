@@ -1,90 +1,130 @@
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.db.supabase import get_supabase_client
-from app.core.auth import require_role, require_user_id
-from app.models.schemas import EventCreate, EventCreated
+from app.core.auth import AuthContext, require_managed_venue, require_role
+from app.db.supabase import get_supabase_client_for_user
+from app.db.supabase_admin import get_supabase_admin_client
+from app.models.schemas import (
+    EventCreate,
+    EventCreated,
+    VenueProfileCreate,
+    VenueProfileRead,
+    VenueProfileUpdate,
+)
 
 router = APIRouter()
-@router.get("/mine")
-def get_my_venue(user_id: str = Depends(require_user_id), _: str = Depends(require_role("venue"))) -> dict:
-    client = get_supabase_client()
 
-    if client is None:
-        return {
-            "owner_user_id": user_id,
-            "verification_status": "pending",
-            "message": "Venue profile scaffolded. Connect to Supabase table 'venues'.",
-        }
+_VENUE_COLS = "id,name,description,address_line,city,state,zip_code,verified,created_at,updated_at"
 
+
+# ---------------------------------------------------------------------------
+# Venue profile  (role: venue + approved claim)
+# ---------------------------------------------------------------------------
+
+@router.get("/mine", response_model=VenueProfileRead)
+def get_my_venue(pair: tuple[AuthContext, str] = Depends(require_managed_venue)):
+    auth, venue_id = pair
+    client = get_supabase_client_for_user(auth.access_token)
     try:
         response = (
             client.table("venues")
-            .select("id,name,description,address_line,city,state,zip_code,verified,created_at,updated_at")
-            .eq("owner_id", user_id)
-            .order("created_at", desc=True)
-            .limit(1)
+            .select(_VENUE_COLS)
+            .eq("id", venue_id)
+            .single()
             .execute()
         )
     except Exception:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load venue profile")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to load venue profile",
+        )
+
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Venue not found")
+    return response.data
+
+
+@router.post("/mine", status_code=status.HTTP_201_CREATED, response_model=VenueProfileRead)
+def create_venue(
+    payload: VenueProfileCreate,
+    auth: AuthContext = Depends(require_role("venue")),
+):
+    admin = get_supabase_admin_client()
+    if admin is None:
+        raise HTTPException(status_code=500, detail="Admin client not configured")
+
+    row = payload.model_dump()
+    try:
+        response = admin.table("venues").insert(row).execute()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create venue",
+        )
 
     rows = response.data or []
     if not rows:
-        return {
-            "owner_user_id": user_id,
-            "has_venue": False,
-            "message": "No venue found for this user. Create a venue in Supabase to see it here.",
-        }
+        raise HTTPException(status_code=500, detail="Insert returned no data")
 
-    venue = rows[0]
-    return {
-        "owner_user_id": user_id,
-        "has_venue": True,
-        "venue": venue,
-    }
+    venue_id = rows[0]["id"]
 
+    try:
+        admin.table("venue_claims").insert({
+            "venue_id": venue_id,
+            "user_id": auth.user_id,
+            "status": "approved",
+        }).execute()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Venue created but failed to create auto-approved claim",
+        )
+
+    return rows[0]
+
+
+@router.patch("/mine", response_model=VenueProfileRead)
+def update_venue(
+    payload: VenueProfileUpdate,
+    pair: tuple[AuthContext, str] = Depends(require_managed_venue),
+):
+    auth, venue_id = pair
+    updates = payload.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No fields to update",
+        )
+
+    client = get_supabase_client_for_user(auth.access_token)
+    try:
+        response = client.table("venues").update(updates).eq("id", venue_id).execute()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update venue",
+        )
+
+    rows = response.data or []
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Venue not found after update")
+    return rows[0]
+
+
+# ---------------------------------------------------------------------------
+# Event creation  (role: venue + approved claim)
+# ---------------------------------------------------------------------------
 
 @router.post("/events", response_model=EventCreated)
 def create_venue_event(
     payload: EventCreate,
-    user_id: str = Depends(require_user_id),
-    _: str = Depends(require_role("venue")),
-) -> EventCreated:
-    client = get_supabase_client()
-
-    if client is None:
-        # Preserve existing behavior if Supabase is not configured yet.
-        return EventCreated(
-            id=f"fallback-{int(datetime.now(timezone.utc).timestamp())}",
-            status="created",
-        )
-
-    try:
-        venue_response = (
-            client.table("venues")
-            .select("id")
-            .eq("owner_id", user_id)
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to resolve venue")
-
-    venues = venue_response.data or []
-    if not venues:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No venue found for this user. Create a venue record before publishing events.",
-        )
-
-    venue_id = venues[0]["id"]
+    pair: tuple[AuthContext, str] = Depends(require_managed_venue),
+):
+    auth, venue_id = pair
+    client = get_supabase_client_for_user(auth.access_token)
 
     event_payload = {
         "venue_id": venue_id,
-        "created_by": user_id,
+        "created_by": auth.user_id,
         "title": payload.title,
         "description": payload.description,
         "category": payload.category,
@@ -103,11 +143,14 @@ def create_venue_event(
             .execute()
         )
     except Exception:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create event")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create event",
+        )
 
     row = insert_response.data or {}
     event_id = row.get("id")
     if not event_id:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Event created without id")
+        raise HTTPException(status_code=500, detail="Event created without id")
 
     return EventCreated(id=str(event_id), status="created")
