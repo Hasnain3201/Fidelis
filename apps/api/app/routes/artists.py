@@ -1,47 +1,108 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.db.supabase import get_supabase_client
-from app.core.auth import require_role, require_user_id
+from app.core.auth import AuthContext, require_managed_artist, require_role
+from app.db.supabase import get_supabase_client_for_user
+from app.db.supabase_admin import get_supabase_admin_client
+from app.models.schemas import (
+    ArtistProfileCreate,
+    ArtistProfileRead,
+    ArtistProfileUpdate,
+)
 
 router = APIRouter()
 
+_ARTIST_COLS = "id,stage_name,genre,bio,media_url,created_at,updated_at"
 
-@router.get("/mine")
-def get_my_artist_profile(
-    user_id: str = Depends(require_user_id),
-    _: str = Depends(require_role("artist")),
-) -> dict:
-    client = get_supabase_client()
 
-    if client is None:
-        return {
-            "owner_user_id": user_id,
-            "message": "Artist profile scaffolded. Add media, availability, and linked events.",
-        }
+# ---------------------------------------------------------------------------
+# Artist profile  (role: artist + approved claim)
+# ---------------------------------------------------------------------------
 
+@router.get("/mine", response_model=ArtistProfileRead)
+def get_my_artist_profile(pair: tuple[AuthContext, str] = Depends(require_managed_artist)):
+    auth, artist_id = pair
+    client = get_supabase_client_for_user(auth.access_token)
     try:
         response = (
             client.table("artists")
-            .select("id,stage_name,genre,bio,media_url,created_at,updated_at")
-            .eq("owner_id", user_id)
-            .order("created_at", desc=True)
-            .limit(1)
+            .select(_ARTIST_COLS)
+            .eq("id", artist_id)
+            .single()
             .execute()
         )
     except Exception:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load artist profile")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to load artist profile",
+        )
+
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+    return response.data
+
+
+@router.post("/mine", status_code=status.HTTP_201_CREATED, response_model=ArtistProfileRead)
+def create_artist_profile(
+    payload: ArtistProfileCreate,
+    auth: AuthContext = Depends(require_role("artist")),
+):
+    admin = get_supabase_admin_client()
+    if admin is None:
+        raise HTTPException(status_code=500, detail="Admin client not configured")
+
+    row = payload.model_dump()
+    try:
+        response = admin.table("artists").insert(row).execute()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create artist profile",
+        )
 
     rows = response.data or []
     if not rows:
-        return {
-            "owner_user_id": user_id,
-            "has_artist_profile": False,
-            "message": "No artist profile found for this user. Create one in Supabase to see it here.",
-        }
+        raise HTTPException(status_code=500, detail="Insert returned no data")
 
-    artist = rows[0]
-    return {
-        "owner_user_id": user_id,
-        "has_artist_profile": True,
-        "artist": artist,
-    }
+    artist_id = rows[0]["id"]
+
+    try:
+        admin.table("artist_claims").insert({
+            "artist_id": artist_id,
+            "user_id": auth.user_id,
+            "status": "approved",
+        }).execute()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Artist created but failed to create auto-approved claim",
+        )
+
+    return rows[0]
+
+
+@router.patch("/mine", response_model=ArtistProfileRead)
+def update_artist_profile(
+    payload: ArtistProfileUpdate,
+    pair: tuple[AuthContext, str] = Depends(require_managed_artist),
+):
+    auth, artist_id = pair
+    updates = payload.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No fields to update",
+        )
+
+    client = get_supabase_client_for_user(auth.access_token)
+    try:
+        response = client.table("artists").update(updates).eq("id", artist_id).execute()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update artist profile",
+        )
+
+    rows = response.data or []
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found after update")
+    return rows[0]
