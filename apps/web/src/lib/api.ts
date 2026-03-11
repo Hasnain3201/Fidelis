@@ -17,6 +17,21 @@ export type EventSearchResponse = {
   total: number;
 };
 
+export type EventSearchSort = "recommended" | "dateSoonest" | "dateLatest";
+
+export type EventSearchParams = {
+  zip: string;
+  genre?: string;
+  query?: string;
+  venue?: string;
+  types?: string[];
+  sort?: EventSearchSort;
+  startAfter?: string;
+  startBefore?: string;
+  page?: number;
+  limit?: number;
+};
+
 export type EventDetailResponse = {
   id: string;
   title: string;
@@ -75,10 +90,39 @@ async function fetchApi<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function searchEvents(zip: string, genre?: string): Promise<EventSearchResponse> {
+  return searchEventsWithFilters({ zip, genre });
+}
+
+export async function searchEventsWithFilters(params: EventSearchParams): Promise<EventSearchResponse> {
   const url = new URL("/api/v1/events/search", API_BASE);
-  url.searchParams.set("zip_code", zip);
-  if (genre && genre !== "all") {
-    url.searchParams.set("genre", genre);
+  url.searchParams.set("zip_code", params.zip);
+
+  if (params.genre && params.genre !== "all") {
+    url.searchParams.set("genre", params.genre);
+  }
+  if (params.query?.trim()) {
+    url.searchParams.set("query", params.query.trim());
+  }
+  if (params.venue?.trim()) {
+    url.searchParams.set("venue", params.venue.trim());
+  }
+  if (params.types?.length) {
+    url.searchParams.set("types", params.types.join(","));
+  }
+  if (params.sort && params.sort !== "recommended") {
+    url.searchParams.set("sort", params.sort);
+  }
+  if (params.startAfter) {
+    url.searchParams.set("start_after", params.startAfter);
+  }
+  if (params.startBefore) {
+    url.searchParams.set("start_before", params.startBefore);
+  }
+  if (params.page && params.page > 1) {
+    url.searchParams.set("page", String(params.page));
+  }
+  if (params.limit) {
+    url.searchParams.set("limit", String(params.limit));
   }
 
   const response = await fetch(url.toString(), {

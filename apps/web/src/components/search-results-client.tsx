@@ -1,24 +1,70 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FilterBar } from "@/components/filter-bar";
 import { EventShowcaseCard } from "@/components/showcase-cards";
 import { Input } from "@/components/ui/input";
+import {
+  searchEventsWithFilters,
+  type EventSearchSort,
+  type EventSummary,
+} from "@/lib/api";
 import { EVENT_ITEMS, type EventItem } from "@/lib/mock-content";
-import { isValidZipCode, normalizeZipInput, zipMatchesEvent } from "@/lib/zip";
+import {
+  isValidZipCode,
+  normalizeZipInput,
+  toZip5,
+  zipMatchesEvent,
+} from "@/lib/zip";
 
-const CATEGORY_FILTERS = ["All", "Live Music", "Concert", "Comedy", "DJ", "Acoustic", "Electronic"];
-const EVENT_TYPE_OPTIONS = ["Live Music", "Concert", "DJ Set", "Comedy Show", "Acoustic", "Band", "Indie Pop"];
-
-type DateWindow = "any" | "weekend" | "next7" | "next30";
-type PriceFilter = "any" | "free" | "under25" | "under40";
-type SortBy = "recommended" | "dateSoonest" | "dateLatest" | "priceLow";
+const CATEGORY_FILTERS = [
+  "All",
+  "Live Music",
+  "Concert",
+  "Comedy",
+  "DJ",
+  "Acoustic",
+  "Electronic",
+];
+const EVENT_TYPE_OPTIONS = [
+  "Live Music",
+  "Concert",
+  "DJ Set",
+  "Comedy Show",
+  "Acoustic",
+  "Band",
+  "Indie Pop",
+];
+const DATE_WINDOWS = ["any", "weekend", "next7", "next30"] as const;
+const SORT_OPTIONS = ["recommended", "dateSoonest", "dateLatest"] as const;
 
 const PAGE_SIZE = 12;
 
+const EVENT_CARD_IMAGES = [
+  "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=900&q=80",
+  "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=900&q=80",
+  "https://images.unsplash.com/photo-1496024840928-4c417adf211d?auto=format&fit=crop&w=900&q=80",
+  "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=900&q=80",
+];
+
+type DateWindow = (typeof DATE_WINDOWS)[number];
+
+type SearchSnapshot = {
+  query: string;
+  zipCode: string;
+  venueQuery: string;
+  activeCategory: string;
+  dateWindow: DateWindow;
+  sortBy: EventSearchSort;
+  selectedTypes: string[];
+  page: number;
+};
+
 function parseEventDateTime(item: EventItem): Date | null {
-  const baseLabel = item.dateLabel.includes(",") ? item.dateLabel.split(",")[1].trim() : item.dateLabel.trim();
+  const baseLabel = item.dateLabel.includes(",")
+    ? item.dateLabel.split(",")[1].trim()
+    : item.dateLabel.trim();
   const year = new Date().getFullYear();
   const parsedDate = new Date(`${baseLabel}, ${year}`);
   if (Number.isNaN(parsedDate.getTime())) return null;
@@ -34,13 +80,6 @@ function parseEventDateTime(item: EventItem): Date | null {
 
   parsedDate.setHours(hours, minutes, 0, 0);
   return parsedDate;
-}
-
-function parsePriceValue(rawPrice: string): number {
-  if (rawPrice.toLowerCase().includes("free")) return 0;
-  const match = rawPrice.match(/(\d+(\.\d+)?)/);
-  if (!match) return Number.POSITIVE_INFINITY;
-  return Number(match[1]);
 }
 
 function matchesDateWindow(item: EventItem, window: DateWindow): boolean {
@@ -61,23 +100,169 @@ function matchesDateWindow(item: EventItem, window: DateWindow): boolean {
   return true;
 }
 
-function sortResults(items: EventItem[], sortBy: SortBy): EventItem[] {
+function sortFallbackResults(items: EventItem[], sortBy: EventSearchSort): EventItem[] {
   if (sortBy === "recommended") return items;
 
   const sorted = [...items];
-  if (sortBy === "priceLow") {
-    sorted.sort((a, b) => parsePriceValue(a.price) - parsePriceValue(b.price));
-    return sorted;
-  }
-
   sorted.sort((a, b) => {
     const aDate = parseEventDateTime(a)?.getTime() ?? Number.MAX_SAFE_INTEGER;
     const bDate = parseEventDateTime(b)?.getTime() ?? Number.MAX_SAFE_INTEGER;
     if (sortBy === "dateLatest") return bDate - aDate;
     return aDate - bDate;
   });
-
   return sorted;
+}
+
+function toTitleCase(value: string): string {
+  return value
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatDateLabel(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "TBD";
+  return date.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatTimeLabel(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "TBD";
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function mapSummaryToCardItem(item: EventSummary, index: number): EventItem {
+  const categoryLabel = toTitleCase(item.category);
+  return {
+    id: item.id,
+    title: item.title,
+    subtitle: categoryLabel,
+    description: `Hosted by ${item.venue_name}. Open event details to view the full lineup and schedule.`,
+    dateLabel: formatDateLabel(item.start_time),
+    timeLabel: formatTimeLabel(item.start_time),
+    zipCode: item.zip_code,
+    location: item.zip_code,
+    venue: item.venue_name,
+    price: "TBD",
+    image: EVENT_CARD_IMAGES[index % EVENT_CARD_IMAGES.length],
+    tags: [categoryLabel],
+  };
+}
+
+function toGenreFilter(category: string): string | undefined {
+  if (category === "All") return undefined;
+
+  if (category === "Comedy") return "comedy";
+  if (category === "Live Music") return "live-music";
+  if (category === "Concert") return "live-music";
+  if (category === "DJ") return "live-music";
+  if (category === "Acoustic") return "live-music";
+  if (category === "Electronic") return "live-music";
+
+  return category.toLowerCase().replace(/\s+/g, "-");
+}
+
+function getDateWindowBounds(window: DateWindow): {
+  startAfter?: string;
+  startBefore?: string;
+} {
+  const now = new Date();
+
+  if (window === "next7") {
+    const end = new Date(now);
+    end.setDate(end.getDate() + 7);
+    return { startAfter: now.toISOString(), startBefore: end.toISOString() };
+  }
+
+  if (window === "next30") {
+    const end = new Date(now);
+    end.setDate(end.getDate() + 30);
+    return { startAfter: now.toISOString(), startBefore: end.toISOString() };
+  }
+
+  if (window === "weekend") {
+    const day = now.getDay();
+
+    if (day === 5 || day === 6 || day === 0) {
+      const end = new Date(now);
+      const daysToSunday = day === 0 ? 0 : 7 - day;
+      end.setDate(end.getDate() + daysToSunday);
+      end.setHours(23, 59, 59, 999);
+      return { startAfter: now.toISOString(), startBefore: end.toISOString() };
+    }
+
+    const friday = new Date(now);
+    friday.setDate(friday.getDate() + (5 - day));
+    friday.setHours(0, 0, 0, 0);
+
+    const sunday = new Date(friday);
+    sunday.setDate(sunday.getDate() + 2);
+    sunday.setHours(23, 59, 59, 999);
+
+    return { startAfter: friday.toISOString(), startBefore: sunday.toISOString() };
+  }
+
+  return {};
+}
+
+function buildFallbackResults(snapshot: SearchSnapshot): EventItem[] {
+  const normalizedQuery = snapshot.query.trim().toLowerCase();
+  const normalizedVenue = snapshot.venueQuery.trim().toLowerCase();
+
+  const filtered = EVENT_ITEMS.filter((item) => {
+    const queryMatch =
+      !normalizedQuery ||
+      item.title.toLowerCase().includes(normalizedQuery) ||
+      item.description.toLowerCase().includes(normalizedQuery) ||
+      item.venue.toLowerCase().includes(normalizedQuery) ||
+      item.tags.some((tag) => tag.toLowerCase().includes(normalizedQuery));
+
+    const zipMatch = !snapshot.zipCode.trim() || zipMatchesEvent(snapshot.zipCode, item.zipCode);
+    const venueMatch = !normalizedVenue || item.venue.toLowerCase().includes(normalizedVenue);
+
+    const categoryMatch =
+      snapshot.activeCategory === "All" ||
+      item.subtitle.toLowerCase().includes(snapshot.activeCategory.toLowerCase()) ||
+      item.tags.some((tag) => tag.toLowerCase().includes(snapshot.activeCategory.toLowerCase()));
+
+    const eventTypeMatch =
+      snapshot.selectedTypes.length === 0 ||
+      snapshot.selectedTypes.some((type) => {
+        const normalizedType = type.toLowerCase();
+        return (
+          item.subtitle.toLowerCase().includes(normalizedType) ||
+          item.tags.some((tag) => tag.toLowerCase().includes(normalizedType))
+        );
+      });
+
+    const dateMatch = matchesDateWindow(item, snapshot.dateWindow);
+
+    return queryMatch && zipMatch && venueMatch && categoryMatch && eventTypeMatch && dateMatch;
+  });
+
+  return sortFallbackResults(filtered, snapshot.sortBy);
+}
+
+function parseSort(value: string | null): EventSearchSort {
+  if (value && SORT_OPTIONS.includes(value as EventSearchSort)) {
+    return value as EventSearchSort;
+  }
+  return "recommended";
+}
+
+function parseDateWindow(value: string | null): DateWindow {
+  if (value && DATE_WINDOWS.includes(value as DateWindow)) {
+    return value as DateWindow;
+  }
+  return "any";
 }
 
 export function SearchResultsClient() {
@@ -86,12 +271,30 @@ export function SearchResultsClient() {
   const pathname = usePathname();
   const paramsKey = params.toString();
 
-  // ---- URL helper (writes params without refresh) ----
-  function setParams(next: Record<string, string | null | undefined>) {
+  const [query, setQuery] = useState("");
+  const [zipCode, setZipCode] = useState("");
+  const [zipError, setZipError] = useState("");
+  const [venueQuery, setVenueQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState("All");
+  const [dateWindow, setDateWindow] = useState<DateWindow>("any");
+  const [sortBy, setSortBy] = useState<EventSearchSort>("recommended");
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const [results, setResults] = useState<EventItem[]>([]);
+  const [totalResults, setTotalResults] = useState(0);
+  const [isFiltering, setIsFiltering] = useState(true);
+  const [statusMessage, setStatusMessage] = useState<{ type: "error"; text: string } | null>(null);
+
+  const requestIdRef = useRef(0);
+  const queryDebounceRef = useRef<number | null>(null);
+  const venueDebounceRef = useRef<number | null>(null);
+
+  const setParams = useCallback((next: Record<string, string | null | undefined>) => {
     const sp = new URLSearchParams(params.toString());
 
     for (const [key, value] of Object.entries(next)) {
-      if (!value || value === "All") {
+      if (!value || value === "All" || (key === "page" && value === "1")) {
         sp.delete(key);
       } else {
         sp.set(key, value);
@@ -100,149 +303,165 @@ export function SearchResultsClient() {
 
     const nextUrl = sp.toString() ? `${pathname}?${sp.toString()}` : pathname;
     router.replace(nextUrl, { scroll: false });
-  }
+  }, [params, pathname, router]);
 
-  // ---- local state ----
-  const [query, setQuery] = useState(() => (params.get("query") ?? "").trim().slice(0, 120));
-  const [zipCode, setZipCode] = useState(() => normalizeZipInput(params.get("zip") ?? params.get("location") ?? ""));
-  const [zipError, setZipError] = useState("");
-  const [venueQuery, setVenueQuery] = useState("");
-  const [activeCategory, setActiveCategory] = useState("All");
-  const [dateWindow, setDateWindow] = useState<DateWindow>("any");
-  const [priceFilter, setPriceFilter] = useState<PriceFilter>("any");
-  const [sortBy, setSortBy] = useState<SortBy>("recommended");
-  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
-  const [results, setResults] = useState<EventItem[]>(EVENT_ITEMS);
-  const [isFiltering, setIsFiltering] = useState(true);
-  const requestIdRef = useRef(0);
+  const updatePageInUrl = useCallback((nextPage: number) => {
+    setParams({ page: nextPage <= 1 ? null : String(nextPage) });
+  }, [setParams]);
 
-  // pagination
-  const [page, setPage] = useState(1);
-
-  // typing debounce (avoid URL updating on every keystroke)
-  const queryDebounceRef = useRef<number | null>(null);
-  const venueDebounceRef = useRef<number | null>(null);
-
-  // ---- read ALL filters from URL whenever URL changes ----
   useEffect(() => {
     const nextParams = new URLSearchParams(paramsKey);
 
-    const nextQuery = (nextParams.get("query") ?? "").trim().slice(0, 120);
-    const nextZip = normalizeZipInput(nextParams.get("zip") ?? nextParams.get("location") ?? "");
-    const nextVenue = (nextParams.get("venue") ?? "").slice(0, 100);
+    const snapshot: SearchSnapshot = {
+      query: (nextParams.get("query") ?? "").trim().slice(0, 120),
+      zipCode: normalizeZipInput(nextParams.get("zip") ?? nextParams.get("location") ?? ""),
+      venueQuery: (nextParams.get("venue") ?? "").slice(0, 100),
+      activeCategory: "All",
+      dateWindow: parseDateWindow(nextParams.get("date")),
+      sortBy: parseSort(nextParams.get("sort")),
+      selectedTypes: [],
+      page: 1,
+    };
 
     const nextCategoryRaw = nextParams.get("category") ?? "All";
-    const nextCategory = CATEGORY_FILTERS.includes(nextCategoryRaw) ? nextCategoryRaw : "All";
-
-    const nextDate = (nextParams.get("date") as DateWindow) ?? "any";
-    const nextPrice = (nextParams.get("price") as PriceFilter) ?? "any";
-    const nextSort = (nextParams.get("sort") as SortBy) ?? "recommended";
+    snapshot.activeCategory = CATEGORY_FILTERS.includes(nextCategoryRaw) ? nextCategoryRaw : "All";
 
     const typesRaw = nextParams.get("types") ?? "";
-    const nextTypes = typesRaw ? typesRaw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    snapshot.selectedTypes = typesRaw
+      ? typesRaw
+          .split(",")
+          .map((item) => item.trim())
+          .filter((item) => EVENT_TYPE_OPTIONS.includes(item))
+      : [];
 
-    setQuery(nextQuery);
-    setZipCode(nextZip);
-    setVenueQuery(nextVenue);
-    setActiveCategory(nextCategory);
-    setDateWindow(nextDate);
-    setPriceFilter(nextPrice);
-    setSortBy(nextSort);
-    setSelectedTypes(nextTypes);
+    const pageValue = Number(nextParams.get("page") ?? "1");
+    snapshot.page = Number.isFinite(pageValue) && pageValue > 0 ? Math.floor(pageValue) : 1;
 
-    // If URL changes, keep page sane
-    setPage(1);
-  }, [paramsKey]);
+    setQuery(snapshot.query);
+    setZipCode(snapshot.zipCode);
+    setVenueQuery(snapshot.venueQuery);
+    setActiveCategory(snapshot.activeCategory);
+    setDateWindow(snapshot.dateWindow);
+    setSortBy(snapshot.sortBy);
+    setSelectedTypes(snapshot.selectedTypes);
+    setCurrentPage(snapshot.page);
 
-  // ---- filtering behavior (mocked data) ----
-  useEffect(() => {
-    const hasInvalidZip = zipCode.trim() && !isValidZipCode(zipCode);
+    const hasInvalidZip = snapshot.zipCode.trim() && !isValidZipCode(snapshot.zipCode);
     setZipError(hasInvalidZip ? "Use ZIP format 12345 or 12345-6789." : "");
+
+    if (!snapshot.zipCode.trim()) {
+      setResults([]);
+      setTotalResults(0);
+      setStatusMessage(null);
+      setIsFiltering(false);
+      return;
+    }
+
+    if (hasInvalidZip) {
+      setResults([]);
+      setTotalResults(0);
+      setStatusMessage(null);
+      setIsFiltering(false);
+      return;
+    }
 
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     setIsFiltering(true);
+    setStatusMessage(null);
 
-    const timer = window.setTimeout(() => {
-      if (requestId !== requestIdRef.current) return;
+    const genre = toGenreFilter(snapshot.activeCategory);
+    const windowBounds = getDateWindowBounds(snapshot.dateWindow);
 
-      const normalizedQuery = query.trim().toLowerCase();
-      const normalizedVenue = venueQuery.trim().toLowerCase();
+    void searchEventsWithFilters({
+      zip: toZip5(snapshot.zipCode),
+      query: snapshot.query || undefined,
+      venue: snapshot.venueQuery || undefined,
+      genre,
+      types: snapshot.selectedTypes.length ? snapshot.selectedTypes : undefined,
+      sort: snapshot.sortBy,
+      startAfter: windowBounds.startAfter,
+      startBefore: windowBounds.startBefore,
+      page: snapshot.page,
+      limit: PAGE_SIZE,
+    })
+      .then((response) => {
+        if (requestId !== requestIdRef.current) return;
 
-      const zipReady = zipCode.trim() && isValidZipCode(zipCode);
+        const totalPages = Math.max(1, Math.ceil(response.total / PAGE_SIZE));
+        if (snapshot.page > totalPages) {
+          updatePageInUrl(totalPages);
+          return;
+        }
 
-      const filtered = EVENT_ITEMS.filter((item) => {
-        const queryMatch =
-          !normalizedQuery ||
-          item.title.toLowerCase().includes(normalizedQuery) ||
-          item.description.toLowerCase().includes(normalizedQuery) ||
-          item.venue.toLowerCase().includes(normalizedQuery) ||
-          item.tags.some((tag) => tag.toLowerCase().includes(normalizedQuery));
+        setResults(
+          response.items.map((item, index) =>
+            mapSummaryToCardItem(item, (snapshot.page - 1) * PAGE_SIZE + index),
+          ),
+        );
+        setTotalResults(response.total);
+      })
+      .catch((error: unknown) => {
+        if (requestId !== requestIdRef.current) return;
 
-        const zipMatch = !zipCode.trim() ? true : zipReady && zipMatchesEvent(zipCode, item.zipCode);
+        const fallbackAll = buildFallbackResults(snapshot);
+        const fallbackTotal = fallbackAll.length;
+        const fallbackTotalPages = Math.max(1, Math.ceil(fallbackTotal / PAGE_SIZE));
 
-        const venueMatch = !normalizedVenue || item.venue.toLowerCase().includes(normalizedVenue);
+        if (snapshot.page > fallbackTotalPages) {
+          updatePageInUrl(fallbackTotalPages);
+          return;
+        }
 
-        const categoryMatch =
-          activeCategory === "All" ||
-          item.subtitle.toLowerCase().includes(activeCategory.toLowerCase()) ||
-          item.tags.some((tag) => tag.toLowerCase().includes(activeCategory.toLowerCase()));
+        const offset = (snapshot.page - 1) * PAGE_SIZE;
+        setResults(fallbackAll.slice(offset, offset + PAGE_SIZE));
+        setTotalResults(fallbackTotal);
 
-        const eventTypeMatch =
-          selectedTypes.length === 0 ||
-          selectedTypes.some((type) => {
-            const normalizedType = type.toLowerCase();
-            return (
-              item.subtitle.toLowerCase().includes(normalizedType) ||
-              item.tags.some((tag) => tag.toLowerCase().includes(normalizedType))
-            );
-          });
-
-        const dateMatch = matchesDateWindow(item, dateWindow);
-
-        const priceValue = parsePriceValue(item.price);
-        const priceMatch =
-          priceFilter === "any" ||
-          (priceFilter === "free" && priceValue === 0) ||
-          (priceFilter === "under25" && priceValue <= 25) ||
-          (priceFilter === "under40" && priceValue <= 40);
-
-        return queryMatch && zipMatch && venueMatch && categoryMatch && eventTypeMatch && dateMatch && priceMatch;
+        const message =
+          error instanceof Error ? error.message : "Live search is temporarily unavailable.";
+        setStatusMessage({
+          type: "error",
+          text: `Live search unavailable (${message}). Showing local fallback results.`,
+        });
+      })
+      .finally(() => {
+        if (requestId === requestIdRef.current) {
+          setIsFiltering(false);
+        }
       });
+  }, [paramsKey, updatePageInUrl]);
 
-      setResults(sortResults(filtered, sortBy));
-      setIsFiltering(false);
-      setPage(1);
-    }, 220);
-
-    return () => window.clearTimeout(timer);
-  }, [activeCategory, dateWindow, priceFilter, query, sortBy, selectedTypes, venueQuery, zipCode]);
+  useEffect(() => {
+    return () => {
+      if (queryDebounceRef.current) window.clearTimeout(queryDebounceRef.current);
+      if (venueDebounceRef.current) window.clearTimeout(venueDebounceRef.current);
+    };
+  }, []);
 
   function toggleEventType(value: string) {
     setSelectedTypes((current) => {
-      const next = current.includes(value) ? current.filter((item) => item !== value) : [...current, value];
-      setParams({ types: next.length ? next.join(",") : null });
+      const next = current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value];
+      setParams({ types: next.length ? next.join(",") : null, page: null });
       return next;
     });
   }
 
-  function removeTypeChip(value: string) {
+  const removeTypeChip = useCallback((value: string) => {
     setSelectedTypes((current) => {
-      const next = current.filter((t) => t !== value);
-      setParams({ types: next.length ? next.join(",") : null });
+      const next = current.filter((item) => item !== value);
+      setParams({ types: next.length ? next.join(",") : null, page: null });
       return next;
     });
-  }
+  }, [setParams]);
 
   function resetFilters() {
     setVenueQuery("");
     setActiveCategory("All");
     setDateWindow("any");
-    setPriceFilter("any");
     setSortBy("recommended");
     setSelectedTypes([]);
-    setPage(1);
-
     setParams({
       venue: null,
       category: null,
@@ -250,6 +469,7 @@ export function SearchResultsClient() {
       price: null,
       sort: null,
       types: null,
+      page: null,
     });
   }
 
@@ -257,12 +477,8 @@ export function SearchResultsClient() {
     selectedTypes.length +
     (activeCategory !== "All" ? 1 : 0) +
     (dateWindow !== "any" ? 1 : 0) +
-    (priceFilter !== "any" ? 1 : 0) +
     (venueQuery.trim() ? 1 : 0);
 
-  const zipReady = zipCode.trim() && isValidZipCode(zipCode);
-
-  // chips (applied filters)
   const chips = useMemo(() => {
     const out: { key: string; label: string; onRemove: () => void }[] = [];
 
@@ -272,44 +488,36 @@ export function SearchResultsClient() {
         label: activeCategory,
         onRemove: () => {
           setActiveCategory("All");
-          setParams({ category: null });
+          setParams({ category: null, page: null });
         },
       });
     }
 
     if (dateWindow !== "any") {
-      const label = dateWindow === "weekend" ? "This weekend" : dateWindow === "next7" ? "Next 7 days" : "Next 30 days";
+      const label =
+        dateWindow === "weekend"
+          ? "This weekend"
+          : dateWindow === "next7"
+            ? "Next 7 days"
+            : "Next 30 days";
       out.push({
         key: `date:${dateWindow}`,
         label,
         onRemove: () => {
           setDateWindow("any");
-          setParams({ date: null });
-        },
-      });
-    }
-
-    if (priceFilter !== "any") {
-      const label = priceFilter === "free" ? "Free only" : priceFilter === "under25" ? "$25 & under" : "$40 & under";
-      out.push({
-        key: `price:${priceFilter}`,
-        label,
-        onRemove: () => {
-          setPriceFilter("any");
-          setParams({ price: null });
+          setParams({ date: null, page: null });
         },
       });
     }
 
     if (sortBy !== "recommended") {
-      const label =
-        sortBy === "dateSoonest" ? "Date: soonest" : sortBy === "dateLatest" ? "Date: latest" : "Price: low to high";
+      const label = sortBy === "dateSoonest" ? "Date: soonest" : "Date: latest";
       out.push({
         key: `sort:${sortBy}`,
         label,
         onRemove: () => {
           setSortBy("recommended");
-          setParams({ sort: null });
+          setParams({ sort: null, page: null });
         },
       });
     }
@@ -320,36 +528,42 @@ export function SearchResultsClient() {
         label: `Venue: ${venueQuery.trim()}`,
         onRemove: () => {
           setVenueQuery("");
-          setParams({ venue: null });
+          setParams({ venue: null, page: null });
         },
       });
     }
 
-    for (const t of selectedTypes) {
+    for (const type of selectedTypes) {
       out.push({
-        key: `type:${t}`,
-        label: t,
-        onRemove: () => removeTypeChip(t),
+        key: `type:${type}`,
+        label: type,
+        onRemove: () => removeTypeChip(type),
       });
     }
 
     return out;
-  }, [activeCategory, dateWindow, priceFilter, sortBy, selectedTypes, venueQuery]);
+  }, [activeCategory, dateWindow, sortBy, selectedTypes, venueQuery, removeTypeChip, setParams]);
 
-  // pagination slicing
-  const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
-  const safePage = Math.min(Math.max(1, page), totalPages);
-  const pageStart = (safePage - 1) * PAGE_SIZE;
-  const pageItems = results.slice(pageStart, pageStart + PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(totalResults / PAGE_SIZE));
 
-  // summary text
   const summaryParts: string[] = [];
-  if (query.trim()) summaryParts.push(`“${query.trim()}”`);
+  if (query.trim()) summaryParts.push(`"${query.trim()}"`);
   if (activeCategory !== "All") summaryParts.push(activeCategory);
   if (venueQuery.trim()) summaryParts.push(`Venue: ${venueQuery.trim()}`);
-  if (dateWindow !== "any") summaryParts.push(dateWindow === "weekend" ? "This weekend" : dateWindow === "next7" ? "Next 7 days" : "Next 30 days");
-  if (priceFilter !== "any") summaryParts.push(priceFilter === "free" ? "Free" : priceFilter === "under25" ? "Under $25" : "Under $40");
-  if (selectedTypes.length) summaryParts.push(`${selectedTypes.length} type${selectedTypes.length === 1 ? "" : "s"}`);
+  if (dateWindow !== "any") {
+    summaryParts.push(
+      dateWindow === "weekend"
+        ? "This weekend"
+        : dateWindow === "next7"
+          ? "Next 7 days"
+          : "Next 30 days",
+    );
+  }
+  if (selectedTypes.length) {
+    summaryParts.push(
+      `${selectedTypes.length} type${selectedTypes.length === 1 ? "" : "s"}`,
+    );
+  }
 
   const disableInputs = isFiltering;
 
@@ -358,7 +572,12 @@ export function SearchResultsClient() {
       <aside className="filterPanel searchFilterPanel" aria-busy={disableInputs}>
         <div className="searchFilterHeader">
           <h2>Filters</h2>
-          <button type="button" className="textResetBtn" onClick={resetFilters} disabled={disableInputs}>
+          <button
+            type="button"
+            className="textResetBtn"
+            onClick={resetFilters}
+            disabled={disableInputs}
+          >
             Reset
           </button>
         </div>
@@ -370,12 +589,14 @@ export function SearchResultsClient() {
             value={venueQuery}
             disabled={disableInputs}
             onChange={(event) => {
-              const v = event.target.value.slice(0, 100);
-              setVenueQuery(v);
+              const value = event.target.value.slice(0, 100);
+              setVenueQuery(value);
 
-              if (venueDebounceRef.current) window.clearTimeout(venueDebounceRef.current);
+              if (venueDebounceRef.current) {
+                window.clearTimeout(venueDebounceRef.current);
+              }
               venueDebounceRef.current = window.setTimeout(() => {
-                setParams({ venue: v });
+                setParams({ venue: value, page: null });
               }, 300);
             }}
             placeholder="Filter by venue"
@@ -390,9 +611,9 @@ export function SearchResultsClient() {
             value={dateWindow}
             disabled={disableInputs}
             onChange={(event) => {
-              const v = event.target.value as DateWindow;
-              setDateWindow(v);
-              setParams({ date: v });
+              const value = parseDateWindow(event.target.value);
+              setDateWindow(value);
+              setParams({ date: value, page: null });
             }}
           >
             <option value="any">Any date</option>
@@ -403,40 +624,20 @@ export function SearchResultsClient() {
         </label>
 
         <label className="filterField">
-          <span>Price</span>
-          <select
-            className="uiSelect"
-            value={priceFilter}
-            disabled={disableInputs}
-            onChange={(event) => {
-              const v = event.target.value as PriceFilter;
-              setPriceFilter(v);
-              setParams({ price: v });
-            }}
-          >
-            <option value="any">Any price</option>
-            <option value="free">Free only</option>
-            <option value="under25">$25 and under</option>
-            <option value="under40">$40 and under</option>
-          </select>
-        </label>
-
-        <label className="filterField">
           <span>Sort</span>
           <select
             className="uiSelect"
             value={sortBy}
             disabled={disableInputs}
             onChange={(event) => {
-              const v = event.target.value as SortBy;
-              setSortBy(v);
-              setParams({ sort: v });
+              const value = parseSort(event.target.value);
+              setSortBy(value);
+              setParams({ sort: value, page: null });
             }}
           >
             <option value="recommended">Recommended</option>
             <option value="dateSoonest">Date (soonest)</option>
             <option value="dateLatest">Date (latest)</option>
-            <option value="priceLow">Price (low to high)</option>
           </select>
         </label>
 
@@ -447,7 +648,12 @@ export function SearchResultsClient() {
               const checked = selectedTypes.includes(item);
               return (
                 <label key={item} className="checkItem">
-                  <input type="checkbox" checked={checked} disabled={disableInputs} onChange={() => toggleEventType(item)} />
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={disableInputs}
+                    onChange={() => toggleEventType(item)}
+                  />
                   {item}
                 </label>
               );
@@ -461,10 +667,12 @@ export function SearchResultsClient() {
           <div>
             <h1>Search Results</h1>
             <p>
-              {isFiltering ? "Updating results..." : `${results.length} events found`}
+              {isFiltering ? "Updating results..." : `${totalResults} events found`}
               {zipCode.trim() ? ` • near ${zipCode.trim()}` : ""}
               {summaryParts.length ? ` • matching ${summaryParts.join(" • ")}` : ""}
-              {activeFilterCount > 0 ? ` • ${activeFilterCount} filter${activeFilterCount === 1 ? "" : "s"} active` : ""}
+              {activeFilterCount > 0
+                ? ` • ${activeFilterCount} filter${activeFilterCount === 1 ? "" : "s"} active`
+                : ""}
             </p>
           </div>
         </div>
@@ -474,12 +682,14 @@ export function SearchResultsClient() {
             value={query}
             disabled={disableInputs}
             onChange={(event) => {
-              const v = event.target.value.slice(0, 120);
-              setQuery(v);
+              const value = event.target.value.slice(0, 120);
+              setQuery(value);
 
-              if (queryDebounceRef.current) window.clearTimeout(queryDebounceRef.current);
+              if (queryDebounceRef.current) {
+                window.clearTimeout(queryDebounceRef.current);
+              }
               queryDebounceRef.current = window.setTimeout(() => {
-                setParams({ query: v });
+                setParams({ query: value, page: null });
               }, 300);
             }}
             placeholder="Search events, artists, venues"
@@ -489,11 +699,17 @@ export function SearchResultsClient() {
             value={zipCode}
             disabled={disableInputs}
             onChange={(event) => {
-              const v = normalizeZipInput(event.target.value);
-              setZipCode(v);
-              setParams({ zip: v });
+              const value = normalizeZipInput(event.target.value);
+              setZipCode(value);
+              setParams({ zip: value, page: null });
             }}
-            onBlur={() => setZipError(zipCode && !isValidZipCode(zipCode) ? "Use ZIP format 12345 or 12345-6789." : "")}
+            onBlur={() => {
+              setZipError(
+                zipCode && !isValidZipCode(zipCode)
+                  ? "Use ZIP format 12345 or 12345-6789."
+                  : "",
+              );
+            }}
             placeholder="ZIP code"
             inputMode="numeric"
             autoComplete="postal-code"
@@ -508,16 +724,17 @@ export function SearchResultsClient() {
           </p>
         ) : null}
 
+        {statusMessage ? <p className="statusBanner error">{statusMessage.text}</p> : null}
+
         <FilterBar
           items={CATEGORY_FILTERS}
           activeItem={activeCategory}
           onSelect={(value) => {
             setActiveCategory(value);
-            setParams({ category: value });
+            setParams({ category: value, page: null });
           }}
         />
 
-        {/* Applied filter chips */}
         {chips.length ? (
           <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
             {chips.map((chip) => (
@@ -530,7 +747,7 @@ export function SearchResultsClient() {
                 title="Remove filter"
                 style={{ cursor: disableInputs ? "not-allowed" : "pointer" }}
               >
-                {chip.label} <span aria-hidden="true">×</span>
+                {chip.label} <span aria-hidden="true">x</span>
               </button>
             ))}
           </div>
@@ -545,47 +762,53 @@ export function SearchResultsClient() {
         ) : !zipCode.trim() ? (
           <div className="emptyStateCard" style={{ marginTop: 16 }}>
             <h3>Enter a ZIP code to see events.</h3>
-            <p className="meta">We’ll show nearby events once you provide a ZIP.</p>
+            <p className="meta">We will show nearby events once you provide a ZIP.</p>
           </div>
-        ) : !zipReady ? (
+        ) : !isValidZipCode(zipCode) ? (
           <div className="emptyStateCard" style={{ marginTop: 16 }}>
-            <h3>That ZIP code doesn’t look right.</h3>
+            <h3>That ZIP code does not look right.</h3>
             <p className="meta">Use ZIP format 12345 or 12345-6789.</p>
           </div>
-        ) : results.length === 0 ? (
+        ) : totalResults === 0 ? (
           <div className="emptyStateCard" style={{ marginTop: 16 }}>
             <h3>No events matched these filters.</h3>
-            <p className="meta">Try removing Price, widening the Date Range, clearing Event Types, or searching a nearby ZIP.</p>
+            <p className="meta">Try widening the date range, removing event types, or searching a nearby ZIP.</p>
           </div>
         ) : (
           <>
             <div className="cardsGrid eventsDense" style={{ marginTop: 16 }}>
-              {pageItems.map((item) => (
+              {results.map((item) => (
                 <EventShowcaseCard key={item.id} item={item} />
               ))}
             </div>
 
-            {/* Pagination */}
             {totalPages > 1 ? (
-              <div style={{ marginTop: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div
+                style={{
+                  marginTop: 16,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
                 <button
                   type="button"
                   className="textResetBtn"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={disableInputs || safePage === 1}
+                  onClick={() => updatePageInUrl(Math.max(1, currentPage - 1))}
+                  disabled={disableInputs || currentPage <= 1}
                 >
                   Prev
                 </button>
 
                 <div className="meta">
-                  Page <strong>{safePage}</strong> of <strong>{totalPages}</strong>
+                  Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>
                 </div>
 
                 <button
                   type="button"
                   className="textResetBtn"
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={disableInputs || safePage === totalPages}
+                  onClick={() => updatePageInUrl(Math.min(totalPages, currentPage + 1))}
+                  disabled={disableInputs || currentPage >= totalPages}
                 >
                   Next
                 </button>

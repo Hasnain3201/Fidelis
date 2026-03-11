@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Query, HTTPException
 
@@ -208,92 +208,208 @@ _SAMPLE_EVENTS = [
         "zip_code": "10001",
     },
     {
-    "id": "evt_124",
-    "title": "Indie Film Premiere Night",
-    "venue_name": "Metro Arts Co-op",
-    "start_time": "2026-09-15T20:00:00+00:00",
-    "category": "arts",
-    "zip_code": "10001",
+        "id": "evt_124",
+        "title": "Indie Film Premiere Night",
+        "venue_name": "Metro Arts Co-op",
+        "start_time": "2026-09-15T20:00:00+00:00",
+        "category": "arts",
+        "zip_code": "10001",
     },
 ]
+
+_SEARCH_SORT_OPTIONS = {"recommended", "dateSoonest", "dateLatest"}
+
+
+def _get_optional_supabase_client():
+    """Return a Supabase client when configured; otherwise allow sample fallback."""
+    try:
+        return get_supabase_client()
+    except Exception:
+        return None
+
+
+def _normalize_text(value: Optional[str]) -> str:
+    return (value or "").strip().lower()
+
+
+def _parse_type_filters(raw_types: Optional[str]) -> list[str]:
+    if not raw_types:
+        return []
+    return [token.strip().lower() for token in raw_types.split(",") if token.strip()]
+
+
+def _to_utc_datetime(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        normalized = str(value).replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _map_row_to_event_record(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "description": row.get("description", "") or "",
+        "venue_name": row.get("venue_name")
+        or (row.get("venues") or {}).get("name", "Unknown Venue"),
+        "start_time": row["start_time"],
+        "category": row["category"],
+        "zip_code": row["zip_code"],
+    }
+
+
+def _matches_search_filters(
+    row: dict[str, Any],
+    query_text: str,
+    venue_text: str,
+    type_filters: list[str],
+) -> bool:
+    title = _normalize_text(row.get("title"))
+    description = _normalize_text(row.get("description"))
+    category = _normalize_text(row.get("category"))
+    venue_name = _normalize_text(row.get("venue_name"))
+    searchable = " ".join([title, description, category, venue_name]).strip()
+
+    if query_text and query_text not in searchable:
+        return False
+
+    if venue_text and venue_text not in venue_name:
+        return False
+
+    if type_filters and not any(token in searchable for token in type_filters):
+        return False
+
+    return True
+
+
+def _sort_search_results(rows: list[dict[str, Any]], sort: str) -> list[dict[str, Any]]:
+    reverse = sort == "dateLatest"
+    return sorted(rows, key=lambda row: _to_utc_datetime(row["start_time"]), reverse=reverse)
+
 
 @router.get("/search", response_model=EventSearchResponse)
 def search_events(
     zip_code: str = Query(..., pattern=r"^\d{5}$"),
+    query: Optional[str] = Query(default=None, max_length=120),
+    venue: Optional[str] = Query(default=None, max_length=120),
     genre: Optional[str] = Query(default=None),
+    types: Optional[str] = Query(default=None, max_length=200),
+    sort: str = Query(default="recommended"),
     start_after: Optional[datetime] = Query(default=None),
     start_before: Optional[datetime] = Query(default=None),
     page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100)
+    limit: int = Query(20, ge=1, le=100),
 ) -> EventSearchResponse:
-    offset = (page - 1) * limit
+    if sort not in _SEARCH_SORT_OPTIONS:
+        raise HTTPException(status_code=422, detail="sort must be one of recommended, dateSoonest, dateLatest")
 
-    client = get_supabase_client()
+    offset = (page - 1) * limit
+    now_utc = datetime.now(timezone.utc)
+    normalized_query = _normalize_text(query)
+    normalized_venue = _normalize_text(venue)
+    normalized_type_filters = _parse_type_filters(types)
+    normalized_genre = _normalize_text(genre)
+    if normalized_genre == "all":
+        normalized_genre = ""
+
+    client = _get_optional_supabase_client()
     if client is not None:
         try:
-
-            query = (
+            supabase_query = (
                 client.table("events")
-                .select("id,title,start_time,category,zip_code,venues(name)", count="exact")
+                .select("id,title,description,start_time,category,zip_code,venues(name)")
                 .eq("zip_code", zip_code)
-                .gte("start_time", datetime.now(timezone.utc).isoformat())
-                .order("start_time")
+                .gte("start_time", now_utc.isoformat())
             )
 
             if start_after:
-                query = query.gte("start_time", start_after.isoformat())
+                supabase_query = supabase_query.gte("start_time", start_after.isoformat())
 
             if start_before:
-                query = query.lte("start_time", start_before.isoformat())
+                supabase_query = supabase_query.lte("start_time", start_before.isoformat())
 
-            if genre and genre != "all":
-                query = query.eq("category", genre)
+            if normalized_genre:
+                supabase_query = supabase_query.eq("category", normalized_genre)
 
-            query = query.range(offset, offset + limit - 1)
-
-            response = query.execute()
+            response = supabase_query.execute()
             rows = response.data or []
+            normalized_rows = [_map_row_to_event_record(row) for row in rows]
+            filtered_rows = [
+                row
+                for row in normalized_rows
+                if _matches_search_filters(
+                    row,
+                    query_text=normalized_query,
+                    venue_text=normalized_venue,
+                    type_filters=normalized_type_filters,
+                )
+            ]
+            sorted_rows = _sort_search_results(filtered_rows, sort)
+            paged_rows = sorted_rows[offset : offset + limit]
+
             items = [
                 EventSummary(
-                        id=row["id"],
-                        title=row["title"],
-                        venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
-                        start_time=row["start_time"],
-                        category=row["category"],
-                        zip_code=row["zip_code"],
+                    id=row["id"],
+                    title=row["title"],
+                    venue_name=row["venue_name"],
+                    start_time=row["start_time"],
+                    category=row["category"],
+                    zip_code=row["zip_code"],
                 )
-                for row in rows
+                for row in paged_rows
             ]
-            
+
             return EventSearchResponse(
-                items= items,
-                page= page,
-                limit= limit,
-                total= response.count or 0,
+                items=items,
+                page=page,
+                limit=limit,
+                total=len(sorted_rows),
             )
         except Exception:
             # Fallback to sample data so local setup remains usable before Supabase wiring.
             pass
 
-
-    results = [event for event in _SAMPLE_EVENTS if event["zip_code"] == zip_code]
-
-    current_datetime_iso = datetime.now(timezone.utc).isoformat()
-
-    results = [event for event in results if event["start_time"] >= current_datetime_iso]
+    sample_rows = [_map_row_to_event_record(event) for event in _SAMPLE_EVENTS if event["zip_code"] == zip_code]
+    sample_rows = [event for event in sample_rows if _to_utc_datetime(event["start_time"]) >= now_utc]
     if start_after:
-        results = [e for e in results if e["start_time"] >= start_after.isoformat()]
+        sample_rows = [event for event in sample_rows if _to_utc_datetime(event["start_time"]) >= start_after]
 
     if start_before:
-        results = [e for e in results if e["start_time"] <= start_before.isoformat()]
+        sample_rows = [event for event in sample_rows if _to_utc_datetime(event["start_time"]) <= start_before]
 
-    if genre and genre != "all":
-        results = [event for event in results if event["category"] == genre]
+    if normalized_genre:
+        sample_rows = [event for event in sample_rows if _normalize_text(event["category"]) == normalized_genre]
 
-    total = len(results)
+    sample_rows = [
+        event
+        for event in sample_rows
+        if _matches_search_filters(
+            event,
+            query_text=normalized_query,
+            venue_text=normalized_venue,
+            type_filters=normalized_type_filters,
+        )
+    ]
+    sample_rows = _sort_search_results(sample_rows, sort)
 
-    paged = results[offset : offset + limit]
-    items = [EventSummary(**event) for event in paged]
+    total = len(sample_rows)
+    paged_rows = sample_rows[offset : offset + limit]
+    items = [
+        EventSummary(
+            id=row["id"],
+            title=row["title"],
+            venue_name=row["venue_name"],
+            start_time=row["start_time"],
+            category=row["category"],
+            zip_code=row["zip_code"],
+        )
+        for row in paged_rows
+    ]
 
     return EventSearchResponse(
         items=items,
@@ -302,9 +418,10 @@ def search_events(
         total=total,
     )
 
+
 @router.get("/{event_id}", response_model=EventDetail)
 def get_event(event_id: str) -> EventDetail:
-    client = get_supabase_client()
+    client = _get_optional_supabase_client()
     if client is not None:
         try:
             response = (
