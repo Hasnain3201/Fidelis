@@ -104,3 +104,4 @@ def signup(payload: SignupRequest):
         )
 
     return {"status": "ok", "user_id": user_id, "email": payload.email}
+
