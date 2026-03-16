@@ -14,14 +14,27 @@ async def list_favorites(user_id: UUID = Depends(require_user_id)):
     response = (
         client
         .table("favorites")
-        .select("event_id,created_at")
+        .select("event_id,created_at,events!favorites_event_id_fkey(title,start_time)")
         .eq("user_id", user_id)
         .order("created_at", desc=True)
         .execute()
     )
 
-    return response.data or []
-    
+    data = response.data or []
+
+    favorites = []
+
+    for row in data:
+        event = row.get("events") or {}
+
+        favorites.append({
+            "event_id": row["event_id"],
+            "created_at": row["created_at"],
+            "title": event.get("title"),
+            "start_time": event.get("start_time"),
+        })
+
+    return favorites    
 
 @router.post("/", response_model=FavoriteRead, status_code=status.HTTP_201_CREATED)
 async def add_favorite(payload: FavoriteCreate, user_id: UUID = Depends(require_user_id)):

@@ -69,6 +69,9 @@ class FavoriteRead(BaseModel):
     event_id: str
     created_at: datetime
 
+    title: str
+    start_time: datetime
+
 
 # ---------------------------------------------------------------------------
 # Follows
@@ -81,7 +84,7 @@ class FollowCreate(BaseModel):
 class FollowRead(BaseModel):
     artist_id: str
     created_at: datetime
-
+    stage_name: str
 
 # ---------------------------------------------------------------------------
 # User profile

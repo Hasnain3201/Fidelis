@@ -15,12 +15,25 @@ async def list_follows(user_id: UUID = Depends(require_user_id)):
     response = (
         client
         .table("artist_follows")
-        .select("artist_id,created_at")
+        .select("artist_id,created_at,artists(stage_name)")
         .eq("user_id", user_id)
         .execute()
     )
 
-    return response.data or [] 
+    data = response.data or []
+
+    follows = []
+
+    for row in data:
+        artist = row.get("artists") or {}
+
+        follows.append({
+            "artist_id": row["artist_id"],
+            "created_at": row["created_at"],
+            "stage_name": artist.get("stage_name")
+        })
+
+    return follows
 
 @router.post("/")
 async def create_follow(payload: FollowCreate, user_id: UUID = Depends(require_user_id)):
