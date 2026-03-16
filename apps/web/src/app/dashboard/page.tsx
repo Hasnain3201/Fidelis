@@ -75,6 +75,24 @@ const [follows, setFollows] = useState<Follow[]>([]);
     setFollows((prev) => prev.filter((artist) => artist.artist_id !== artistID));
   }
 
+  async function handleUnfavorite(eventID: string) {
+    const session = localStorage.getItem("livey.auth.session.v1");
+    const token = session ? JSON.parse(session).accessToken : null;
+
+    if (!token) return;
+
+    await fetch(`http://localhost:8000/api/v1/favorites/${eventID}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    setFavorites((prev) =>
+      prev.filter((fav) => fav.event_id !== eventID)
+    );
+  }
+
   return (
     <section className="siteSection pageUtility">
       <div className="siteContainer">
@@ -82,7 +100,7 @@ const [follows, setFollows] = useState<Follow[]>([]);
           <div className="card dashboardHeroCard">
             <p className="dashboardPill">User Dashboard</p>
             <h1>Welcome back, {profile?.display_name ?? "User"}</h1>
-            <p className="meta">Track saved events, followed artists, and your upcoming week in one place.</p>
+            <p className="meta">Track your saved events, followed artists, and your upcoming week in one place.</p>
             <div className="pageActions">
               <Link href="/search" className="pageActionLink">
                 Find More Events
@@ -122,9 +140,19 @@ const [follows, setFollows] = useState<Follow[]>([]);
                           : "Saved Event"}
                       </p>
                     </div>
-                    <Link className="pageActionLink secondary" href={`/events/${fav.event_id}`}>
-                      Open
-                    </Link>
+                    <div className="pageActions">
+                      <Link className="pageActionLink secondary" href={`/events/${fav.event_id}`}>
+                        Open
+                      </Link>
+
+                      <button
+                        type="button"
+                        className="pageActionLink secondary"
+                        onClick={() => handleUnfavorite(fav.event_id)}
+                      >
+                        Unfavorite
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
