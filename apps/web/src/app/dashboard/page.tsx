@@ -59,6 +59,22 @@ const [follows, setFollows] = useState<Follow[]>([]);
     loadDashboard();
   }, []);
 
+  async function handleUnfollow(artistID: string) {
+      const session = localStorage.getItem("livey.auth.session.v1");
+    const token = session ? JSON.parse(session).accessToken : null;
+
+    if (!token) return;
+
+    await fetch(`http://localhost:8000/api/v1/follows/${artistID}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    setFollows((prev) => prev.filter((artist) => artist.artist_id !== artistID));
+  }
+
   return (
     <section className="siteSection pageUtility">
       <div className="siteContainer">
@@ -123,7 +139,11 @@ const [follows, setFollows] = useState<Follow[]>([]);
                       <strong>{artist.stage_name ?? "Artist"}</strong>
                       <p className="meta">Followed artist</p>
                     </div>
-                    <button type="button" className="pageActionLink secondary">
+                    <button
+                      type="button"
+                      className="pageActionLink secondary"
+                      onClick={() => handleUnfollow(artist.artist_id)}
+                    >
                       Unfollow
                     </button>
                   </div>

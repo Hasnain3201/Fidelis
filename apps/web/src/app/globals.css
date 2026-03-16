@@ -983,10 +983,28 @@ a {
   color: #4b5877;
   font-size: 13px;
   font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.05s ease;
+}
+
+.pageActionLink:hover {
+  background: #e7edff;
+}
+
+.pageActionLink:active {
+  transform: scale(0.97);
 }
 
 .pageActionLink.secondary {
   background: #ffffff;
+}
+
+.pageActionLink.secondary:hover {
+  background: #f2f4fa;
+}
+
+.pageActionLink.secondary:active {
+  background: #e6e9f2;
 }
 
 .createEventForm {
