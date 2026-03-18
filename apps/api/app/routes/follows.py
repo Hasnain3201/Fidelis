@@ -35,7 +35,7 @@ async def list_follows(user_id: UUID = Depends(require_user_id)):
 
     return follows
 
-@router.post("/")
+@router.post("/", response_model=FollowRead)
 async def create_follow(payload: FollowCreate, user_id: UUID = Depends(require_user_id)):
     client = get_supabase_admin_client()
 
@@ -43,6 +43,18 @@ async def create_follow(payload: FollowCreate, user_id: UUID = Depends(require_u
         "user_id": user_id,
         "artist_id": payload.artist_id
     }
+
+    existing = (
+        client
+        .table("artist_follows")
+        .select("artist_id")
+        .eq("user_id", user_id)
+        .eq("artist_id", payload.artist_id)
+        .execute()
+    )
+
+    if existing.data:
+        raise HTTPException(status_code=400, detail="Already following artist.")
 
     response = (
         client
@@ -52,11 +64,31 @@ async def create_follow(payload: FollowCreate, user_id: UUID = Depends(require_u
     )
 
     if not response.data:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to follow.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to follow."
+        )
 
-    return response.data[0] or None
+    follow = response.data[0]
 
-@router.delete("/{artist_id}")
+    artist_res = (
+        client
+        .table("artists")
+        .select("stage_name")
+        .eq("id", follow["artist_id"])
+        .single()
+        .execute()
+    )
+
+    artist = artist_res.data or {}
+
+    return {
+        "artist_id": follow["artist_id"],
+        "created_at": follow["created_at"],
+        "stage_name": artist.get("stage_name")
+    }
+
+@router.delete("/{artist_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_follow(artist_id: UUID, user_id: UUID = Depends(require_user_id)):
     client = get_supabase_admin_client()
 
