@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Query, HTTPException
 
@@ -130,3 +131,31 @@ def get_event(event_id: str):
         zip_code=row["zip_code"],
         ticket_url=row.get("ticket_url"),
     )
+
+@router.get("/{event_id}/artists")
+async def get_event_artists(event_id: UUID):
+    client = get_supabase_client()
+
+    response = (
+        client
+        .table("event_artists")
+        .select("artists(id, stage_name, genre, media_url)")
+        .eq("event_id", event_id)
+        .execute()
+    )
+
+    data = response.data or []
+
+    artists = []
+
+    for row in data:
+        artist = row.get("artists") or {}
+
+        artists.append({
+            "id": artist.get("id"),
+            "stage_name": artist.get("stage_name"),
+            "genre": artist.get("genre"),
+            "media_url": artist.get("media_url")
+        })
+
+    return artists
