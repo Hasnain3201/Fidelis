@@ -6,7 +6,6 @@ from uuid import UUID
 from fastapi import APIRouter, Query, HTTPException, Depends
 
 from app.db.supabase import get_supabase_client
-from app.db.supabase_admin import get_supabase_admin_client
 from app.models.schemas import EventSummary, EventSearchResponse, EventDetail
 
 from app.core.auth import require_user_id
