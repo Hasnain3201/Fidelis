@@ -31,6 +31,12 @@ def build_event_query(
     if zip_code:
         q = q.eq("zip_code", zip_code)
 
+    if city:
+        q = q.filter("venues.city", "ilike", f"%{city}%")
+
+    if state:
+        q = q.filter("venues.state", "ilike", f"%{state}%")
+
     if start_after:
         q = q.gte("start_time", start_after.isoformat())
 
