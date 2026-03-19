@@ -26,7 +26,7 @@ api_router.include_router(
     venues.router, prefix="/venues", tags=["venues"], dependencies=_auth_required,
 )
 api_router.include_router(
-    artists.router, prefix="/artists", tags=["artists"], dependencies=_auth_required,
+    artists.router, prefix="/artists", tags=["artists"],
 )
 api_router.include_router(
     claims.router, prefix="/claims", tags=["claims"], dependencies=_auth_required,
