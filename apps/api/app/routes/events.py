@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Optional, List
 from uuid import UUID
@@ -5,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query, HTTPException, Depends
 
 from app.db.supabase import get_supabase_client
+from app.db.supabase_admin import get_supabase_admin_client
 from app.models.schemas import EventSummary, EventSearchResponse, EventDetail
 
 from app.core.auth import require_user_id
@@ -261,6 +263,33 @@ async def get_recommended_events(user_id: UUID = Depends(require_user_id)):
     combined.sort(key=lambda x: x["start_time"])
 
     return items
+
+@router.get("/trending", response_model=list[EventSummary])
+async def get_trending_events():
+    client = get_supabase_client()
+
+    response = (
+        client
+        .rpc("get_popular_events", {"limit_count": 20})
+        .execute()
+    )
+
+    if response.data is None:
+        raise HTTPException(status_code=500, detail="Failed to fetch trending events")
+
+    rows = response.data
+
+    return [
+        EventSummary(
+            id=row["event_id"],
+            title=row.get("title", "Untitled Event"),
+            venue_name=row["venue_name"],
+            start_time=row["start_time"],
+            category=row["category"],
+            zip_code=row["zip_code"],
+        )
+        for row in rows
+    ]
 
 @router.get("/{event_id}/artists")
 async def get_event_artists(event_id: UUID):
