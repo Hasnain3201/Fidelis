@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from uuid import UUID
-
+from datetime import datetime, timezone
 from app.core.auth import require_user_id
 from app.db.supabase_admin import get_supabase_admin_client
 from app.models.schemas import FavoriteCreate, FavoriteRead
@@ -48,14 +48,25 @@ async def add_favorite(payload: FavoriteCreate, user_id: UUID = Depends(require_
     response = (
         client
         .table("favorites")
-        .insert(row)
+        .upsert(row)
         .execute()
     )
 
-    if not response.data:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to save favorite")
-    
-    return response.data[0]
+    event = (
+        client
+        .table("events")
+        .select("title,start_time")
+        .eq("id", payload.event_id)
+        .single()
+        .execute()
+    ).data
+
+    return {
+        "event_id": payload.event_id,
+        "created_at": datetime.now(timezone.utc),  
+        "title": event["title"],
+        "start_time": event["start_time"],
+    }
 
 @router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_favorite(event_id: UUID, user_id:UUID = Depends(require_user_id)):
