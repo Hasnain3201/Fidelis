@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+
 from uuid import UUID
 from datetime import datetime, timezone
+
 from app.core.auth import require_user_id
 from app.db.supabase_admin import get_supabase_admin_client
-from app.models.schemas import FavoriteCreate, FavoriteRead
+from app.models.favorite_schemas import FavoriteCreate, FavoriteRead
 
 router = APIRouter()
 

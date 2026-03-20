@@ -3,15 +3,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from uuid import UUID
 
 from app.core.auth import AuthContext, require_managed_artist, require_role
+
 from app.db.supabase import get_supabase_client_for_user
 from app.db.supabase_admin import get_supabase_admin_client
-from app.models.schemas import (
-    ArtistProfileCreate,
-    ArtistProfileRead,
-    ArtistProfileUpdate,
-)
-
 from app.db.supabase import get_supabase_client
+
+from app.models.artist_schemas import ArtistProfileCreate, ArtistProfileRead, ArtistProfileUpdate
 
 router = APIRouter()
 

@@ -4,7 +4,7 @@ from uuid import UUID
 from app.core.auth import require_user_id
 
 from app.db.supabase_admin import get_supabase_admin_client
-from app.models.schemas import FollowCreate, FollowRead
+from app.models.follow_schemas import FollowCreate, FollowRead
 
 router = APIRouter()
 
