@@ -96,7 +96,7 @@ export const EVENT_ITEMS: EventItem[] = [
     venue: "Warehouse 54",
     price: "$20 cover",
     image:
-      "https://images.unsplash.com/photo-1571266028243-d220c9fe95a3?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1496024840928-4c417adf211d?auto=format&fit=crop&w=900&q=80",
     tags: ["DJ Set", "Dance Party", "House"],
   },
   {
@@ -328,7 +328,7 @@ export const ARTIST_ITEMS: ArtistItem[] = [
     location: "Houston, TX",
     description: "Electronic music producer and DJ specializing in house and techno.",
     image:
-      "https://images.unsplash.com/photo-1571266028243-d220c9fe95a3?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1496024840928-4c417adf211d?auto=format&fit=crop&w=900&q=80",
     tags: ["EDM", "House", "Techno"],
     badge: "DJ",
   },

@@ -1,4 +1,6 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 
 from app.core.auth import require_user_id
@@ -12,7 +14,7 @@ ALLOWED_PUBLIC_ROLES = {"user", "venue", "artist"}
 class SignupRequest(BaseModel):
     email: EmailStr
     password: str
-    full_name: str | None = None
+    full_name: Optional[str] = None
     role: str = "user"
 
 
@@ -96,8 +98,4 @@ def signup(payload: SignupRequest):
             detail=f"User created in auth but profile creation failed: {e}",
         )
 
-    return {
-        "status": "ok",
-        "user_id": user_id,
-        "email": payload.email,
-    }
+    return {"status": "ok", "user_id": user_id, "email": payload.email}
