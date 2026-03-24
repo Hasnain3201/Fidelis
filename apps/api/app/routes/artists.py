@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from uuid import UUID
+
 from app.core.auth import AuthContext, require_managed_artist, require_role
+
 from app.db.supabase import get_supabase_client_for_user
 from app.db.supabase_admin import get_supabase_admin_client
-from app.models.schemas import (
-    ArtistProfileCreate,
-    ArtistProfileRead,
-    ArtistProfileUpdate,
-)
+from app.db.supabase import get_supabase_client
+
+from app.models.artist_schemas import ArtistProfileCreate, ArtistProfileRead, ArtistProfileUpdate
 
 router = APIRouter()
 
@@ -106,3 +107,32 @@ def update_artist_profile(
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found after update")
     return rows[0]
+
+@router.get("/{artist_id}/events")
+async def get_artist_events(artist_id: UUID):
+    client = get_supabase_client()
+    
+    response = (
+        client
+        .table("event_artists")
+        .select("events(id, title, start_time, category, zip_code, venues(name))")
+        .eq("artist_id", artist_id)
+        .execute()
+    )
+    
+    data = response.data or []
+
+    events = []
+
+    for row in data:
+        event = row.get("events") or {}
+        venue = event.get("venues") or {}
+
+        events.append({
+            "id": event.get("id"),
+            "title": event.get("title"),
+            "start_time": event.get("start_time"),
+            "venue_name": venue.get("name")
+        })
+
+    return events

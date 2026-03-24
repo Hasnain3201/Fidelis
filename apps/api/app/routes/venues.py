@@ -3,13 +3,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.core.auth import AuthContext, require_managed_venue, require_role
 from app.db.supabase import get_supabase_client_for_user
 from app.db.supabase_admin import get_supabase_admin_client
-from app.models.schemas import (
-    EventCreate,
-    EventCreated,
-    VenueProfileCreate,
-    VenueProfileRead,
-    VenueProfileUpdate,
-)
+
+from app.models.event_schemas import EventCreate, EventCreated
+from app.models.venue_schemas import VenueProfileCreate, VenueProfileRead, VenueProfileUpdate
 
 router = APIRouter()
 

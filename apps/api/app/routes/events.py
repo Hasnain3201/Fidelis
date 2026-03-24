@@ -1,471 +1,354 @@
+from collections import Counter
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Optional, List
+from uuid import UUID
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 
 from app.db.supabase import get_supabase_client
-from app.models.schemas import EventSummary, EventSearchResponse, EventDetail
+from app.models.event_schemas import EventSummary, EventSearchResponse, EventDetail
+
+from app.core.auth import require_user_id
 
 router = APIRouter()
 
-_SAMPLE_EVENTS = [
-    # PAST EVENT (should be excluded by default upcoming filter)
-    {
-        "id": "evt_090",
-        "title": "Past Indie Show",
-        "venue_name": "Old Town Hall",
-        "start_time": "2025-01-01T20:00:00+00:00",
-        "category": "live-music",
-        "zip_code": "10001",
-    },
+def build_event_query(
+    client,
+    query=None,
+    zip_code=None,
+    city=None,
+    state=None,
+    start_after=None,
+    start_before=None,
+    categories=None,
+):
+    q = (
+        client.table("events")
+        .select("id,title,start_time,category,zip_code,venues(name, city, state)")
+        .order("start_time")
+    )
 
-    # NEAR FUTURE
-    {
-        "id": "evt_100",
-        "title": "Live Jazz Night",
-        "venue_name": "Harbor House",
-        "start_time": "2026-03-01T20:00:00+00:00",
-        "category": "live-music",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_101",
-        "title": "Stand-Up Open Mic",
-        "venue_name": "Brick Room",
-        "start_time": "2026-03-03T00:00:00+00:00",
-        "category": "comedy",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_102",
-        "title": "Downtown Art Walk",
-        "venue_name": "Metro Arts Co-op",
-        "start_time": "2026-03-06T22:00:00+00:00",
-        "category": "arts",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_103",
-        "title": "Indie Rock Showcase",
-        "venue_name": "The Underground",
-        "start_time": "2026-03-07T19:30:00+00:00",
-        "category": "live-music",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_104",
-        "title": "Latin Dance Social",
-        "venue_name": "Pulse Studio",
-        "start_time": "2026-03-08T21:00:00+00:00",
-        "category": "dance",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_105",
-        "title": "Poetry Slam Night",
-        "venue_name": "Verse Cafe",
-        "start_time": "2026-03-10T20:00:00+00:00",
-        "category": "arts",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_106",
-        "title": "Techno Warehouse Party",
-        "venue_name": "Factory 47",
-        "start_time": "2026-03-12T23:00:00+00:00",
-        "category": "live-music",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_107",
-        "title": "Acoustic Songwriter Night",
-        "venue_name": "Harbor House",
-        "start_time": "2026-03-14T19:00:00+00:00",
-        "category": "live-music",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_108",
-        "title": "Improv Comedy Jam",
-        "venue_name": "Brick Room",
-        "start_time": "2026-03-16T20:30:00+00:00",
-        "category": "comedy",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_109",
-        "title": "Rooftop DJ Set",
-        "venue_name": "Skyline Terrace",
-        "start_time": "2026-03-18T22:00:00+00:00",
-        "category": "live-music",
-        "zip_code": "10001",
-    },
+    if zip_code:
+        q = q.eq("zip_code", zip_code)
 
-    {
-        "id": "evt_111",
-        "title": "Spring Beer Festival",
-        "venue_name": "Central Plaza",
-        "start_time": "2026-04-02T18:00:00+00:00",
-        "category": "festival",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_112",
-        "title": "Blues & BBQ Night",
-        "venue_name": "Harbor House",
-        "start_time": "2026-04-05T19:00:00+00:00",
-        "category": "live-music",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_113",
-        "title": "Artisan Makers Market",
-        "venue_name": "Metro Arts Co-op",
-        "start_time": "2026-04-08T17:00:00+00:00",
-        "category": "arts",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_114",
-        "title": "Hip-Hop Showcase",
-        "venue_name": "The Underground",
-        "start_time": "2026-04-10T21:00:00+00:00",
-        "category": "live-music",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_115",
-        "title": "Salsa Live Band",
-        "venue_name": "Pulse Studio",
-        "start_time": "2026-04-12T20:00:00+00:00",
-        "category": "dance",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_116",
-        "title": "Trivia & Karaoke Night",
-        "venue_name": "Verse Cafe",
-        "start_time": "2026-04-15T19:30:00+00:00",
-        "category": "comedy",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_117",
-        "title": "EDM Glow Party",
-        "venue_name": "Factory 47",
-        "start_time": "2026-04-18T23:30:00+00:00",
-        "category": "live-music",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_118",
-        "title": "Folk Music Brunch",
-        "venue_name": "Harbor House",
-        "start_time": "2026-04-20T16:00:00+00:00",
-        "category": "live-music",
-        "zip_code": "10001",
-    },
+    if city:
+        q = q.filter("venues.city", "ilike", f"%{city}%")
 
-    # FAR FUTURE
-    {
-        "id": "evt_119",
-        "title": "City Summer Kickoff",
-        "venue_name": "Central Plaza",
-        "start_time": "2026-06-01T18:00:00+00:00",
-        "category": "festival",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_110",
-        "title": "Summer Rooftop Festival",
-        "venue_name": "Skyline Terrace",
-        "start_time": "2026-07-15T18:00:00+00:00",
-        "category": "festival",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_121",
-        "title": "Late Summer Jazz Gala",
-        "venue_name": "Harbor House",
-        "start_time": "2026-08-10T20:00:00+00:00",
-        "category": "live-music",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_122",
-        "title": "Outdoor Film Night",
-        "venue_name": "Central Plaza",
-        "start_time": "2026-08-20T20:30:00+00:00",
-        "category": "arts",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_123",
-        "title": "Fall Comedy Festival",
-        "venue_name": "Brick Room",
-        "start_time": "2026-09-05T19:00:00+00:00",
-        "category": "comedy",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_124",
-        "title": "Indie Film Premiere Night",
-        "venue_name": "Metro Arts Co-op",
-        "start_time": "2026-09-15T20:00:00+00:00",
-        "category": "arts",
-        "zip_code": "10001",
-    },
-]
+    if state:
+        q = q.filter("venues.state", "ilike", f"%{state}%")
 
-_SEARCH_SORT_OPTIONS = {"recommended", "dateSoonest", "dateLatest"}
-
-
-def _get_optional_supabase_client():
-    """Return a Supabase client when configured; otherwise allow sample fallback."""
-    try:
-        return get_supabase_client()
-    except Exception:
-        return None
-
-
-def _normalize_text(value: Optional[str]) -> str:
-    return (value or "").strip().lower()
-
-
-def _parse_type_filters(raw_types: Optional[str]) -> list[str]:
-    if not raw_types:
-        return []
-    return [token.strip().lower() for token in raw_types.split(",") if token.strip()]
-
-
-def _to_utc_datetime(value: Any) -> datetime:
-    if isinstance(value, datetime):
-        parsed = value
-    else:
-        normalized = str(value).replace("Z", "+00:00")
-        parsed = datetime.fromisoformat(normalized)
-
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
-
-
-def _map_row_to_event_record(row: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "id": row["id"],
-        "title": row["title"],
-        "description": row.get("description", "") or "",
-        "venue_name": row.get("venue_name")
-        or (row.get("venues") or {}).get("name", "Unknown Venue"),
-        "start_time": row["start_time"],
-        "category": row["category"],
-        "zip_code": row["zip_code"],
-    }
-
-
-def _matches_search_filters(
-    row: dict[str, Any],
-    query_text: str,
-    venue_text: str,
-    type_filters: list[str],
-) -> bool:
-    title = _normalize_text(row.get("title"))
-    description = _normalize_text(row.get("description"))
-    category = _normalize_text(row.get("category"))
-    venue_name = _normalize_text(row.get("venue_name"))
-    searchable = " ".join([title, description, category, venue_name]).strip()
-
-    if query_text and query_text not in searchable:
-        return False
-
-    if venue_text and venue_text not in venue_name:
-        return False
-
-    if type_filters and not any(token in searchable for token in type_filters):
-        return False
-
-    return True
-
-
-def _sort_search_results(rows: list[dict[str, Any]], sort: str) -> list[dict[str, Any]]:
-    reverse = sort == "dateLatest"
-    return sorted(rows, key=lambda row: _to_utc_datetime(row["start_time"]), reverse=reverse)
-
-
-@router.get("/search", response_model=EventSearchResponse)
-def search_events(
-    zip_code: str = Query(..., pattern=r"^\d{5}$"),
-    query: Optional[str] = Query(default=None, max_length=120),
-    venue: Optional[str] = Query(default=None, max_length=120),
-    genre: Optional[str] = Query(default=None),
-    types: Optional[str] = Query(default=None, max_length=200),
-    sort: str = Query(default="recommended"),
-    start_after: Optional[datetime] = Query(default=None),
-    start_before: Optional[datetime] = Query(default=None),
-    page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
-) -> EventSearchResponse:
-    if sort not in _SEARCH_SORT_OPTIONS:
-        raise HTTPException(status_code=422, detail="sort must be one of recommended, dateSoonest, dateLatest")
-
-    offset = (page - 1) * limit
-    now_utc = datetime.now(timezone.utc)
-    normalized_query = _normalize_text(query)
-    normalized_venue = _normalize_text(venue)
-    normalized_type_filters = _parse_type_filters(types)
-    normalized_genre = _normalize_text(genre)
-    if normalized_genre == "all":
-        normalized_genre = ""
-
-    client = _get_optional_supabase_client()
-    if client is not None:
-        try:
-            supabase_query = (
-                client.table("events")
-                .select("id,title,description,start_time,category,zip_code,venues(name)")
-                .eq("zip_code", zip_code)
-                .gte("start_time", now_utc.isoformat())
-            )
-
-            if start_after:
-                supabase_query = supabase_query.gte("start_time", start_after.isoformat())
-
-            if start_before:
-                supabase_query = supabase_query.lte("start_time", start_before.isoformat())
-
-            if normalized_genre:
-                supabase_query = supabase_query.eq("category", normalized_genre)
-
-            response = supabase_query.execute()
-            rows = response.data or []
-            normalized_rows = [_map_row_to_event_record(row) for row in rows]
-            filtered_rows = [
-                row
-                for row in normalized_rows
-                if _matches_search_filters(
-                    row,
-                    query_text=normalized_query,
-                    venue_text=normalized_venue,
-                    type_filters=normalized_type_filters,
-                )
-            ]
-            sorted_rows = _sort_search_results(filtered_rows, sort)
-            paged_rows = sorted_rows[offset : offset + limit]
-
-            items = [
-                EventSummary(
-                    id=row["id"],
-                    title=row["title"],
-                    venue_name=row["venue_name"],
-                    start_time=row["start_time"],
-                    category=row["category"],
-                    zip_code=row["zip_code"],
-                )
-                for row in paged_rows
-            ]
-
-            return EventSearchResponse(
-                items=items,
-                page=page,
-                limit=limit,
-                total=len(sorted_rows),
-            )
-        except Exception:
-            # Fallback to sample data so local setup remains usable before Supabase wiring.
-            pass
-
-    sample_rows = [_map_row_to_event_record(event) for event in _SAMPLE_EVENTS if event["zip_code"] == zip_code]
-    sample_rows = [event for event in sample_rows if _to_utc_datetime(event["start_time"]) >= now_utc]
     if start_after:
-        sample_rows = [event for event in sample_rows if _to_utc_datetime(event["start_time"]) >= start_after]
+        q = q.gte("start_time", start_after.isoformat())
 
     if start_before:
-        sample_rows = [event for event in sample_rows if _to_utc_datetime(event["start_time"]) <= start_before]
+        q = q.lte("start_time", start_before.isoformat())
 
-    if normalized_genre:
-        sample_rows = [event for event in sample_rows if _normalize_text(event["category"]) == normalized_genre]
+    if not start_after and not start_before:
+        now_utc = datetime.now(timezone.utc)
+        q = q.gte("start_time", now_utc.isoformat())
 
-    sample_rows = [
-        event
-        for event in sample_rows
-        if _matches_search_filters(
-            event,
-            query_text=normalized_query,
-            venue_text=normalized_venue,
-            type_filters=normalized_type_filters,
-        )
-    ]
-    sample_rows = _sort_search_results(sample_rows, sort)
+    if categories:
+        q = q.in_("category", categories)
 
-    total = len(sample_rows)
-    paged_rows = sample_rows[offset : offset + limit]
-    items = [
+    if query:
+        q = q.ilike("title", f"%{query}%")
+
+    return q
+
+@router.get("/", response_model=list[EventSummary])
+def list_events(
+    zip_code: Optional[str] = Query(default=None, pattern=r"^\d{5}$"),
+    limit: int = Query(20, ge=1, le=100),
+):
+    client = get_supabase_client()
+
+    query = (
+        client.table("events")
+        .select("id,title,start_time,category,zip_code,venues(name)")
+        .order("start_time")
+        .limit(limit)
+    )
+
+    if zip_code:
+        query = query.eq("zip_code", zip_code)
+
+    response = query.execute()
+    rows = response.data or []
+
+    return [
         EventSummary(
             id=row["id"],
             title=row["title"],
-            venue_name=row["venue_name"],
+            venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
             start_time=row["start_time"],
             category=row["category"],
             zip_code=row["zip_code"],
         )
-        for row in paged_rows
+        for row in rows
+    ]
+
+@router.get("/search", response_model=EventSearchResponse)
+def search_events(
+    query: Optional[str] = Query(default=None),
+
+    zip_code: Optional[str] = Query(default=None, pattern=r"^\d{5}$"),
+    city: Optional[str] = Query(default=None),
+    state: Optional[str] = Query(default=None),
+
+    start_after: Optional[datetime] = Query(default=None),
+    start_before: Optional[datetime] = Query(default=None),
+
+    categories: Optional[List[str]] = Query(default=None),
+
+    venue: Optional[str] = Query(default=None),
+
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+):
+    client = get_supabase_client()
+
+    offset = (page - 1) * limit
+
+    supabase_query = build_event_query(
+        client,
+        query=query,
+        zip_code=zip_code,
+        city=city,
+        state=state,
+        start_after=start_after,
+        start_before=start_before,
+        categories=categories,
+    ).range(offset, offset + limit - 1)
+
+    if zip_code:
+        supabase_query = supabase_query.eq("zip_code", zip_code)
+
+    if start_after:
+        supabase_query = supabase_query.gte("start_time", start_after.isoformat())
+
+    if start_before:
+        supabase_query = supabase_query.lte("start_time", start_before.isoformat())
+
+    if not start_after and not start_before:
+        now_utc = datetime.now(timezone.utc)
+        supabase_query = supabase_query.gte("start_time", now_utc.isoformat())
+
+    if categories:
+        supabase_query = supabase_query.in_("category", categories)
+
+    if query:
+        supabase_query = supabase_query.ilike("title", f"%{query}%")
+
+    response = supabase_query.execute()
+    rows = response.data or []
+
+    if venue:
+        venue = venue.lower()
+        rows = [
+            row for row in rows
+            if venue in ((row.get("venues") or {}).get("name", "").lower())
+        ]
+
+    if city:
+        city = city.lower()
+        rows = [
+            row for row in rows
+            if city in ((row.get("venues") or {}).get("city", "").lower())
+        ]
+
+    if state:
+        state = state.lower()
+        rows = [
+            row for row in rows
+            if state in ((row.get("venues") or {}).get("state", "").lower())
+        ]
+
+    items = [
+        EventSummary(
+            id=row["id"],
+            title=row["title"],
+            venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
+            start_time=row["start_time"],
+            category=row["category"],
+            zip_code=row["zip_code"],
+        )
+        for row in rows
     ]
 
     return EventSearchResponse(
         items=items,
         page=page,
         limit=limit,
-        total=total,
+        total=len(items),
     )
 
+@router.get("/recommended", response_model=list[EventSummary])
+async def get_recommended_events(user_id: UUID = Depends(require_user_id)):
+    client = get_supabase_client()
+    
+    user_location = (
+        client
+        .table("profiles")
+        .select("home_zip,city,state")
+        .eq("id", user_id)
+        .single()
+        .execute()
+    ).data or {}
+
+    user_favorite_events = (
+        client
+        .table("favorites")
+        .select("events(category)")
+        .eq("user_id", user_id)
+        .execute()
+    ).data or []
+
+    user_followed_artists = (
+        client
+        .table("artist_follows")
+        .select("artist_id")
+        .eq("user_id", user_id)
+        .execute()
+    ).data or []
+
+    categories = list({
+        fav.get("events", {}).get("category")
+        for fav in user_favorite_events
+        if fav.get("events")
+    })
+
+    artist_ids = [a["artist_id"] for a in user_followed_artists]
+
+    base_query = build_event_query(
+        client=client,
+        zip_code=user_location.get("home_zip"),
+        city=user_location.get("city"),
+        state=user_location.get("state"),
+        categories=categories if categories else None
+    ).limit(50)
+
+    base_events = base_query.execute().data or []
+
+    artist_events = []
+    if artist_ids:
+        artist_response = (
+            client
+            .table("event_artists")
+            .select("events(id,title,start_time,category,zip_code,venues(name))")
+            .in_("artist_id", artist_ids)
+            .execute()
+        ).data or []
+
+        for row in artist_response:
+            event = row.get("events") or {}
+            artist_events.append(event)
+
+    seen = set()
+    combined = []
+
+    for event in base_events + artist_events:
+        if not event or event.get("id") in seen:
+            continue
+
+        seen.add(event["id"])
+        combined.append(event)
+    
+    items = [
+        EventSummary(
+            id=row["id"],
+            title=row["title"],
+            venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
+            start_time=row["start_time"],
+            category=row["category"],
+            zip_code=row["zip_code"]
+        )
+        for row in combined
+    ]
+
+    combined.sort(key=lambda x: x["start_time"])
+
+    return items
+
+@router.get("/trending", response_model=list[EventSummary])
+async def get_trending_events():
+    client = get_supabase_client()
+
+    response = (
+        client
+        .rpc("get_popular_events", {"limit_count": 20})
+        .execute()
+    )
+
+    if response.data is None:
+        raise HTTPException(status_code=500, detail="Failed to fetch trending events")
+
+    rows = response.data
+
+    return [
+        EventSummary(
+            id=row["event_id"],
+            title=row.get("title", "Untitled Event"),
+            venue_name=row["venue_name"],
+            start_time=row["start_time"],
+            category=row["category"],
+            zip_code=row["zip_code"],
+        )
+        for row in rows
+    ]
+
+@router.get("/{event_id}/artists")
+async def get_event_artists(event_id: UUID):
+    client = get_supabase_client()
+
+    response = (
+        client
+        .table("event_artists")
+        .select("artists(id, stage_name, genre, media_url)")
+        .eq("event_id", event_id)
+        .execute()
+    )
+
+    data = response.data or []
+
+    artists = []
+
+    for row in data:
+        artist = row.get("artists") or {}
+
+        artists.append({
+            "id": artist.get("id"),
+            "stage_name": artist.get("stage_name"),
+            "genre": artist.get("genre"),
+            "media_url": artist.get("media_url")
+        })
+
+    return artists
 
 @router.get("/{event_id}", response_model=EventDetail)
-def get_event(event_id: str) -> EventDetail:
-    client = _get_optional_supabase_client()
-    if client is not None:
-        try:
-            response = (
-                client.table("events")
-                .select("id,title,description,start_time,end_time,category,zip_code,ticket_url,venues(name)")
-                .eq("id", event_id)
-                .single()
-                .execute()
-            )
+def get_event(event_id: UUID):
+    client = get_supabase_client()
 
-            row = response.data
+    response = (
+        client.table("events")
+        .select("id,title,description,start_time,end_time,category,zip_code,ticket_url,venues(name)")
+        .eq("id", event_id)
+        .single()
+        .execute()
+    )
 
-            if not row:
-                raise HTTPException(status_code=404, detail="Event not found")
-            
-            return EventDetail(
-                id=row["id"],
-                title=row["title"],
-                description=row.get("description", ""),
-                venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
-                start_time=row["start_time"],
-                end_time=row["end_time"],
-                category=row["category"],
-                zip_code=row["zip_code"],
-                ticket_url=row.get("ticket_url"),
-            )
+    row = response.data
 
-        except HTTPException:
-            raise
-        except Exception:
-            raise HTTPException(status_code=404, detail="Event not found")
-        
-    for event in _SAMPLE_EVENTS:
-        if event["id"] == event_id:
-            return EventDetail(
-                id=event["id"],
-                title=event["title"],
-                description="",
-                venue_name=event["venue_name"],
-                start_time=event["start_time"],
-                end_time=event["start_time"],  # placeholder
-                category=event["category"],
-                zip_code=event["zip_code"],
-                ticket_url=None,
-            )
-        
-    raise HTTPException(status_code=404, detail="Event not found")
+    if not row:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    return EventDetail(
+        id=row["id"],
+        title=row["title"],
+        description=row.get("description", ""),
+        venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
+        start_time=row["start_time"],
+        end_time=row.get("end_time"),
+        category=row["category"],
+        zip_code=row["zip_code"],
+        ticket_url=row.get("ticket_url"),
+    )

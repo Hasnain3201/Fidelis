@@ -1,18 +1,106 @@
-import Link from "next/link";
-import { ARTIST_ITEMS, EVENT_ITEMS } from "@/lib/mock-content";
+"use client";
 
-const SAVED_EVENTS = EVENT_ITEMS.slice(0, 3);
-const FOLLOWED_ARTISTS = ARTIST_ITEMS.slice(0, 4);
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
+type Profile = {
+  id: string
+  display_name: string
+}
+
+type Favorite = {
+  event_id: string
+  created_at: string
+  title: string
+  start_time: string
+}
+
+type Follow = {
+  artist_id: string
+  created_at: string
+  stage_name: string
+}
 
 export default function UserDashboardPage() {
+
+const [profile, setProfile] = useState<Profile | null>(null);
+const [favorites, setFavorites] = useState<Favorite[]>([]);
+const [follows, setFollows] = useState<Follow[]>([]);
+
+  useEffect(() => {
+    async function loadDashboard() {
+      const session = localStorage.getItem("livey.auth.session.v1")
+
+      const token = session ? JSON.parse(session).accessToken : null
+
+      if (!token) {
+        console.error("No token found")
+        return
+      }
+      
+      const headers = {
+        Authorization: `Bearer ${token}`,
+      };
+
+      const profileRes = await fetch("http://localhost:8000/api/v1/profiles/me", { headers })
+      const favoritesRes = await fetch("http://localhost:8000/api/v1/favorites/", { headers })
+      const followsRes = await fetch("http://localhost:8000/api/v1/follows/", { headers })
+
+      const profileData = await profileRes.json();
+      const favoritesData = await favoritesRes.json();
+      const followsData = await followsRes.json();
+
+      setProfile(profileData);
+      setFavorites(favoritesData);
+      setFollows(followsData);
+      console.log(favoritesData)
+    }
+
+    loadDashboard();
+  }, []);
+
+  async function handleUnfollow(artistID: string) {
+      const session = localStorage.getItem("livey.auth.session.v1");
+    const token = session ? JSON.parse(session).accessToken : null;
+
+    if (!token) return;
+
+    await fetch(`http://localhost:8000/api/v1/follows/${artistID}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    setFollows((prev) => prev.filter((artist) => artist.artist_id !== artistID));
+  }
+
+  async function handleUnfavorite(eventID: string) {
+    const session = localStorage.getItem("livey.auth.session.v1");
+    const token = session ? JSON.parse(session).accessToken : null;
+
+    if (!token) return;
+
+    await fetch(`http://localhost:8000/api/v1/favorites/${eventID}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    setFavorites((prev) =>
+      prev.filter((fav) => fav.event_id !== eventID)
+    );
+  }
+
   return (
     <section className="siteSection pageUtility">
       <div className="siteContainer">
         <div className="dashboardShell">
           <div className="card dashboardHeroCard">
             <p className="dashboardPill">User Dashboard</p>
-            <h1>Welcome back, Maya</h1>
-            <p className="meta">Track saved events, followed artists, and your upcoming week in one place.</p>
+            <h1>Welcome back, {profile?.display_name ?? "User"}</h1>
+            <p className="meta">Track your saved events, followed artists, and your upcoming week in one place.</p>
             <div className="pageActions">
               <Link href="/search" className="pageActionLink">
                 Find More Events
@@ -26,11 +114,11 @@ export default function UserDashboardPage() {
           <div className="dashboardGrid">
             <div className="miniCard">
               <strong>Saved Events</strong>
-              <p>{SAVED_EVENTS.length}</p>
+              <p>{favorites.length}</p>
             </div>
             <div className="miniCard">
               <strong>Followed Artists</strong>
-              <p>{FOLLOWED_ARTISTS.length}</p>
+              <p>{follows.length}</p>
             </div>
             <div className="miniCard">
               <strong>Unread Alerts</strong>
@@ -42,17 +130,29 @@ export default function UserDashboardPage() {
             <div className="card">
               <h2>Saved Events</h2>
               <div className="listStack">
-                {SAVED_EVENTS.map((event) => (
-                  <div key={event.id} className="listItemRow">
+                {Array.isArray(favorites) && favorites.map((fav) => (
+                  <div key={fav.event_id} className="listItemRow">
                     <div>
-                      <strong>{event.title}</strong>
+                      <strong>{fav.title ?? "Event"}</strong>
                       <p className="meta">
-                        {event.dateLabel} • {event.timeLabel}
+                        {fav.start_time
+                          ? new Date(fav.start_time).toLocaleDateString()
+                          : "Saved Event"}
                       </p>
                     </div>
-                    <Link className="pageActionLink secondary" href={`/events/${event.id}`}>
-                      Open
-                    </Link>
+                    <div className="pageActions">
+                      <Link className="pageActionLink secondary" href={`/events/${fav.event_id}`}>
+                        Open
+                      </Link>
+
+                      <button
+                        type="button"
+                        className="pageActionLink secondary"
+                        onClick={() => handleUnfavorite(fav.event_id)}
+                      >
+                        Unfavorite
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -61,13 +161,17 @@ export default function UserDashboardPage() {
             <div className="card">
               <h2>Followed Artists</h2>
               <div className="listStack">
-                {FOLLOWED_ARTISTS.map((artist) => (
-                  <div key={artist.id} className="listItemRow">
+                {Array.isArray(follows) && follows.map((artist) => (
+                  <div key={artist.artist_id} className="listItemRow">
                     <div>
-                      <strong>{artist.name}</strong>
-                      <p className="meta">{artist.location}</p>
+                      <strong>{artist.stage_name ?? "Artist"}</strong>
+                      <p className="meta">Followed artist</p>
                     </div>
-                    <button type="button" className="pageActionLink secondary">
+                    <button
+                      type="button"
+                      className="pageActionLink secondary"
+                      onClick={() => handleUnfollow(artist.artist_id)}
+                    >
                       Unfollow
                     </button>
                   </div>
