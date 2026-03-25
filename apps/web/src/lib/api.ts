@@ -52,6 +52,25 @@ export type EventArtist = {
   media_url?: string | null;
 };
 
+export type ArtistSummary = {
+  id: string;
+  stage_name: string;
+  genre?: string | null;
+  bio?: string | null;
+  media_url?: string | null;
+};
+
+export type VenueSummary = {
+  id: string;
+  name: string;
+  description?: string | null;
+  address_line?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip_code: string;
+  verified: boolean;
+};
+
 export type CreateVenueEventPayload = {
   title: string;
   description: string;
@@ -88,6 +107,12 @@ export type FollowItem = {
   artist_id: string;
   created_at: string;
   stage_name: string;
+};
+
+export type VenueFollowItem = {
+  venue_id: string;
+  created_at: string;
+  venue_name: string;
 };
 
 export type VenueProfileResponse = {
@@ -272,6 +297,48 @@ export async function getEventArtists(eventId: string): Promise<EventArtist[]> {
   return fetchApi<EventArtist[]>(`/api/v1/events/${encodeURIComponent(eventId)}/artists`);
 }
 
+export async function listArtists(params?: { query?: string; genre?: string; limit?: number }): Promise<ArtistSummary[]> {
+  const url = new URL("/api/v1/artists/", API_BASE);
+  if (params?.query?.trim()) url.searchParams.set("query", params.query.trim());
+  if (params?.genre?.trim()) url.searchParams.set("genre", params.genre.trim());
+  if (params?.limit) url.searchParams.set("limit", String(params.limit));
+
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(url.toString(), { cache: "no-store" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Network request failed.";
+    throw new Error(`${message} Confirm the API is running at ${API_BASE}.`);
+  }
+  if (!response.ok) throw new Error(await parseErrorMessage(response));
+  return (await response.json()) as ArtistSummary[];
+}
+
+export async function listVenues(params?: {
+  query?: string;
+  city?: string;
+  state?: string;
+  zip_code?: string;
+  limit?: number;
+}): Promise<VenueSummary[]> {
+  const url = new URL("/api/v1/venues/", API_BASE);
+  if (params?.query?.trim()) url.searchParams.set("query", params.query.trim());
+  if (params?.city?.trim()) url.searchParams.set("city", params.city.trim());
+  if (params?.state?.trim()) url.searchParams.set("state", params.state.trim());
+  if (params?.zip_code?.trim()) url.searchParams.set("zip_code", params.zip_code.trim());
+  if (params?.limit) url.searchParams.set("limit", String(params.limit));
+
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(url.toString(), { cache: "no-store" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Network request failed.";
+    throw new Error(`${message} Confirm the API is running at ${API_BASE}.`);
+  }
+  if (!response.ok) throw new Error(await parseErrorMessage(response));
+  return (await response.json()) as VenueSummary[];
+}
+
 export async function createVenueEvent(
   payload: CreateVenueEventPayload,
   session: AuthSession,
@@ -334,6 +401,32 @@ export async function unfollowArtist(artistId: string, session: AuthSession): Pr
   });
 }
 
+export async function listVenueFollows(session: AuthSession): Promise<VenueFollowItem[]> {
+  return fetchApi<VenueFollowItem[]>("/api/v1/follows/venues", { session });
+}
+
+export async function followVenue(venueId: string, session: AuthSession): Promise<VenueFollowItem> {
+  return fetchApi<VenueFollowItem>("/api/v1/follows/venues", {
+    method: "POST",
+    session,
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ venue_id: venueId }),
+  });
+}
+
+export async function unfollowVenue(venueId: string, session: AuthSession): Promise<void> {
+  await fetchApi<void>(`/api/v1/follows/venues/${encodeURIComponent(venueId)}`, {
+    method: "DELETE",
+    session,
+  });
+}
+
 export async function getMyVenue(session: AuthSession): Promise<VenueProfileResponse> {
   return fetchApi<VenueProfileResponse>("/api/v1/venues/mine", { session });
+}
+
+export async function listMyVenueEvents(session: AuthSession, limit = 50): Promise<EventSummary[]> {
+  return fetchApi<EventSummary[]>(`/api/v1/venues/mine/events?limit=${limit}`, { session });
 }

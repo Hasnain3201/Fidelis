@@ -1,31 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { followArtist, listFollows, unfollowArtist } from "@/lib/api";
 import { getAuthChangeEventName, getStoredAuthSession, type AuthSession } from "@/lib/auth";
-
-const LOCAL_ARTIST_FOLLOWS_KEY = "livey.local.artist-follows.v1";
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function readLocalArtistFollows(): string[] {
-  if (typeof window === "undefined") return [];
-  const raw = window.localStorage.getItem(LOCAL_ARTIST_FOLLOWS_KEY);
-  if (!raw) return [];
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item): item is string => typeof item === "string");
-  } catch {
-    return [];
-  }
-}
-
-function writeLocalArtistFollows(nextIds: string[]) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(LOCAL_ARTIST_FOLLOWS_KEY, JSON.stringify(nextIds));
-}
 
 type ArtistFollowButtonProps = {
   artistId: string;
@@ -35,8 +13,7 @@ export function ArtistFollowButton({ artistId }: ArtistFollowButtonProps) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isPending, setIsPending] = useState(false);
-
-  const usesBackendFollow = useMemo(() => UUID_PATTERN.test(artistId), [artistId]);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     function syncSession() {
@@ -59,22 +36,14 @@ export function ArtistFollowButton({ artistId }: ArtistFollowButtonProps) {
     let cancelled = false;
 
     async function loadFollowState(currentSession: AuthSession) {
-      if (usesBackendFollow) {
-        try {
-          const follows = await listFollows(currentSession);
-          if (cancelled) return;
-          setIsFollowing(follows.some((follow) => follow.artist_id === artistId));
-          return;
-        } catch {
-          if (cancelled) return;
-          setIsFollowing(false);
-          return;
-        }
+      try {
+        const follows = await listFollows(currentSession);
+        if (cancelled) return;
+        setIsFollowing(follows.some((follow) => follow.artist_id === artistId));
+      } catch {
+        if (cancelled) return;
+        setIsFollowing(false);
       }
-
-      const localFollows = readLocalArtistFollows();
-      if (cancelled) return;
-      setIsFollowing(localFollows.includes(artistId));
     }
 
     if (!session || session.role !== "user") {
@@ -87,37 +56,27 @@ export function ArtistFollowButton({ artistId }: ArtistFollowButtonProps) {
     return () => {
       cancelled = true;
     };
-  }, [artistId, session, usesBackendFollow]);
+  }, [artistId, session]);
 
   async function onToggleFollow() {
     if (!session || session.role !== "user") return;
 
+    setFeedback(null);
     setIsPending(true);
 
     try {
-      if (usesBackendFollow) {
-        if (isFollowing) {
-          await unfollowArtist(artistId, session);
-          setIsFollowing(false);
-        } else {
-          await followArtist(artistId, session);
-          setIsFollowing(true);
-        }
-
-        return;
-      }
-
-      const current = readLocalArtistFollows();
-
-      if (current.includes(artistId)) {
-        const next = current.filter((id) => id !== artistId);
-        writeLocalArtistFollows(next);
+      if (isFollowing) {
+        await unfollowArtist(artistId, session);
         setIsFollowing(false);
+        setFeedback("Artist unfollowed.");
       } else {
-        const next = [...current, artistId];
-        writeLocalArtistFollows(next);
+        await followArtist(artistId, session);
         setIsFollowing(true);
+        setFeedback("Artist followed.");
       }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to update artist follow.";
+      setFeedback(message);
     } finally {
       setIsPending(false);
     }
@@ -140,15 +99,15 @@ export function ArtistFollowButton({ artistId }: ArtistFollowButtonProps) {
   }
 
   return (
-    <button
-      type="button"
-      className="followBtn"
-      onClick={onToggleFollow}
-      disabled={isPending}
-      aria-pressed={isFollowing}
-      title={usesBackendFollow ? "Follow artist" : "Follow artist (local demo mode)"}
-    >
-      {isPending ? "..." : isFollowing ? "Following" : "Follow"}
-    </button>
+    <div style={{ display: "grid", gap: 4 }}>
+      <button type="button" className="followBtn" onClick={onToggleFollow} disabled={isPending} aria-pressed={isFollowing}>
+        {isPending ? "..." : isFollowing ? "Following" : "Follow"}
+      </button>
+      {feedback ? (
+        <p className="meta" role="status" style={{ margin: 0, fontSize: 12 }}>
+          {feedback}
+        </p>
+      ) : null}
+    </div>
   );
 }

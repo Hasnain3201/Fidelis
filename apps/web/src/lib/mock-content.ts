@@ -1,3 +1,8 @@
+/*
+ * Mock content is intentionally kept in-repo for offline/manual testing.
+ * It is not imported by the production data flow; all active screens now use backend APIs.
+ */
+
 export type EventItem = {
   id: string;
   title: string;

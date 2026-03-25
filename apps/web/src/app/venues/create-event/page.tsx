@@ -8,8 +8,6 @@ import { createVenueEvent, getMyVenue, type VenueProfileResponse } from "@/lib/a
 import { getAuthChangeEventName, getStoredAuthSession, type AuthSession } from "@/lib/auth";
 import { isValidZipCode, normalizeZipInput } from "@/lib/zip";
 
-type PublishMode = "draft" | "publish";
-
 type CreateEventFormState = {
   title: string;
   description: string;
@@ -79,7 +77,6 @@ export default function CreateEventPage() {
 
   const [form, setForm] = useState<CreateEventFormState>(INITIAL_FORM_STATE);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -153,7 +150,7 @@ export default function CreateEventPage() {
     });
   }
 
-  function validateForm(mode: PublishMode) {
+  function validateForm() {
     const nextErrors: Record<string, string> = {};
 
     if (!form.title.trim() || form.title.trim().length < 3) {
@@ -203,7 +200,7 @@ export default function CreateEventPage() {
       nextErrors.endTime = "End time must be after start time.";
     }
 
-    if (mode === "publish" && startDate && startDate.getTime() <= Date.now()) {
+    if (startDate && startDate.getTime() <= Date.now()) {
       nextErrors.startTime = "Event start must be in the future.";
     }
 
@@ -211,17 +208,9 @@ export default function CreateEventPage() {
     return Object.keys(nextErrors).length === 0;
   }
 
-  async function submitForm(mode: PublishMode) {
+  async function submitForm() {
     setStatusMessage(null);
-    if (!validateForm(mode)) return;
-
-    if (mode === "draft") {
-      setIsSavingDraft(true);
-      await new Promise((resolve) => window.setTimeout(resolve, 300));
-      setStatusMessage({ type: "success", text: "Draft saved locally (UI only)." });
-      setIsSavingDraft(false);
-      return;
-    }
+    if (!validateForm()) return;
 
     if (!session) {
       setStatusMessage({ type: "error", text: "Sign in first to publish events." });
@@ -274,7 +263,7 @@ export default function CreateEventPage() {
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void submitForm("publish");
+    void submitForm();
   }
 
   if (!session) {
@@ -572,10 +561,7 @@ export default function CreateEventPage() {
             ) : null}
 
             <div className="createEventActions">
-              <Button type="button" variant="secondary" onClick={() => void submitForm("draft")} disabled={isSavingDraft || isPublishing}>
-                {isSavingDraft ? "Saving..." : "Save Draft"}
-              </Button>
-              <Button type="submit" disabled={isPublishing || isSavingDraft}>
+              <Button type="submit" disabled={isPublishing}>
                 {isPublishing ? "Publishing..." : "Publish Event"}
               </Button>
             </div>

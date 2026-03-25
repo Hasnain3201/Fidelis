@@ -69,7 +69,7 @@ export default function UserDashboardPage() {
       setStatusMessage(null);
 
       try {
-        const [profileData, favoritesData, followsData] = await Promise.all([
+        const [profileResult, favoritesResult, followsResult] = await Promise.allSettled([
           getMyProfile(currentSession),
           listFavorites(currentSession),
           listFollows(currentSession),
@@ -77,9 +77,23 @@ export default function UserDashboardPage() {
 
         if (cancelled) return;
 
-        setProfile(profileData);
-        setFavorites(favoritesData);
+        if (profileResult.status !== "fulfilled") {
+          throw profileResult.reason;
+        }
+
+        const apiFavorites = favoritesResult.status === "fulfilled" ? favoritesResult.value : [];
+        const followsData = followsResult.status === "fulfilled" ? followsResult.value : [];
+
+        setProfile(profileResult.value);
+        setFavorites(apiFavorites);
         setFollows(followsData);
+
+        if (favoritesResult.status !== "fulfilled") {
+          setStatusMessage({
+            type: "error",
+            text: "Live favorites unavailable right now.",
+          });
+        }
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : "Failed to load dashboard.";

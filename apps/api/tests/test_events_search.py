@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 
 def _event(
@@ -21,10 +22,11 @@ def _event(
     }
 
 
-@patch("app.routes.events.get_supabase_client", side_effect=RuntimeError("not configured"))
-def test_search_filters_query_venue_and_types(_mock_client, anon_client):
+@patch("app.routes.events.build_event_query")
+@patch("app.routes.events.get_supabase_client")
+def test_search_filters_query_venue_and_types(mock_get_client, mock_build_event_query, anon_client):
     now = datetime.now(timezone.utc)
-    sample_events = [
+    response_rows = [
         _event(
             "evt_a",
             title="Acoustic Sunrise Session",
@@ -48,27 +50,38 @@ def test_search_filters_query_venue_and_types(_mock_client, anon_client):
         ),
     ]
 
-    with patch("app.routes.events._SAMPLE_EVENTS", sample_events):
-        resp = anon_client.get(
-            "/api/v1/events/search",
-            params={
-                "zip_code": "10001",
-                "query": "night",
-                "venue": "blue",
-                "types": "dj",
-            },
-        )
+    query = MagicMock()
+    query.range.return_value = query
+    query.execute.return_value = SimpleNamespace(data=response_rows, count=3)
+    mock_get_client.return_value = MagicMock()
+    mock_build_event_query.return_value = query
+
+    resp = anon_client.get(
+        "/api/v1/events/search",
+        params={
+            "zip_code": "10001",
+            "query": "night",
+            "venue": "blue",
+            "types": "dj",
+        },
+    )
 
     assert resp.status_code == 200
     body = resp.json()
     assert body["total"] == 1
     assert body["items"][0]["id"] == "evt_b"
+    _, kwargs = mock_build_event_query.call_args
+    assert kwargs["query"] == "night"
+    assert kwargs["zip_code"] == "10001"
+    assert kwargs["venue"] == "blue"
+    assert kwargs["include_count"] is True
 
 
-@patch("app.routes.events.get_supabase_client", side_effect=RuntimeError("not configured"))
-def test_search_sort_date_latest(_mock_client, anon_client):
+@patch("app.routes.events.build_event_query")
+@patch("app.routes.events.get_supabase_client")
+def test_search_sort_date_latest(mock_get_client, mock_build_event_query, anon_client):
     now = datetime.now(timezone.utc)
-    sample_events = [
+    response_rows = [
         _event(
             "evt_older",
             title="Early Show",
@@ -85,22 +98,26 @@ def test_search_sort_date_latest(_mock_client, anon_client):
         ),
     ]
 
-    with patch("app.routes.events._SAMPLE_EVENTS", sample_events):
-        resp = anon_client.get(
-            "/api/v1/events/search",
-            params={
-                "zip_code": "10001",
-                "sort": "dateLatest",
-            },
-        )
+    query = MagicMock()
+    query.range.return_value = query
+    query.execute.return_value = SimpleNamespace(data=response_rows, count=2)
+    mock_get_client.return_value = MagicMock()
+    mock_build_event_query.return_value = query
+
+    resp = anon_client.get(
+        "/api/v1/events/search",
+        params={
+            "zip_code": "10001",
+            "sort": "dateLatest",
+        },
+    )
 
     assert resp.status_code == 200
     body = resp.json()
     assert [item["id"] for item in body["items"]] == ["evt_newer", "evt_older"]
 
 
-@patch("app.routes.events.get_supabase_client", side_effect=RuntimeError("not configured"))
-def test_search_invalid_sort_returns_422(_mock_client, anon_client):
+def test_search_invalid_sort_returns_422(anon_client):
     resp = anon_client.get(
         "/api/v1/events/search",
         params={
@@ -111,3 +128,27 @@ def test_search_invalid_sort_returns_422(_mock_client, anon_client):
 
     assert resp.status_code == 422
     assert "sort" in resp.json()["detail"].lower()
+
+
+@patch("app.routes.events.get_supabase_client", side_effect=RuntimeError("not configured"))
+def test_search_returns_503_when_database_unavailable(_mock_client, anon_client):
+    resp = anon_client.get(
+        "/api/v1/events/search",
+        params={"zip_code": "10001"},
+    )
+
+    assert resp.status_code == 503
+
+
+@patch("app.routes.events.build_event_query")
+@patch("app.routes.events.get_supabase_client")
+def test_search_returns_503_when_query_execution_fails(mock_get_client, mock_build_event_query, anon_client):
+    query = MagicMock()
+    query.range.return_value = query
+    query.execute.side_effect = RuntimeError("network unavailable")
+
+    mock_get_client.return_value = MagicMock()
+    mock_build_event_query.return_value = query
+
+    resp = anon_client.get("/api/v1/events/search", params={"zip_code": "10001"})
+    assert resp.status_code == 503

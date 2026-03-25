@@ -4,10 +4,9 @@ import { type FormEvent, useEffect, useMemo, useState, useTransition } from "rea
 import { useRouter } from "next/navigation";
 import { FilterBar } from "@/components/filter-bar";
 import { FilterSidebar } from "@/components/filter-sidebar";
-import { EventShowcaseCard } from "@/components/showcase-cards";
+import { EventShowcaseCard, type EventCardItem } from "@/components/showcase-cards";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { EVENT_ITEMS } from "@/lib/mock-content";
 import { searchEvents, type EventSummary } from "@/lib/api";
 import { isValidZipCode, normalizeZipInput, zipMatchesEvent } from "@/lib/zip";
 
@@ -55,7 +54,7 @@ function toTitleCase(value: string): string {
     .join(" ");
 }
 
-function mapSummaryToCardItem(item: EventSummary, index: number) {
+function mapSummaryToCardItem(item: EventSummary, index: number): EventCardItem {
   const categoryLabel = toTitleCase(item.category);
   return {
     id: item.id,
@@ -80,7 +79,7 @@ export default function HomePage() {
   const [zipCode, setZipCode] = useState("");
   const [zipError, setZipError] = useState("");
   const [activeQuick, setActiveQuick] = useState(QUICK_FILTERS[0]);
-  const [eventItems, setEventItems] = useState(EVENT_ITEMS);
+  const [eventItems, setEventItems] = useState<EventCardItem[]>([]);
   const [cardsMessage, setCardsMessage] = useState("");
 
   useEffect(() => {
@@ -97,12 +96,13 @@ export default function HomePage() {
           return;
         }
 
-        setEventItems(EVENT_ITEMS);
-        setCardsMessage("No backend events yet. Showing local demo cards.");
-      } catch {
+        setEventItems([]);
+        setCardsMessage("No events available yet in the database.");
+      } catch (error) {
         if (cancelled) return;
-        setEventItems(EVENT_ITEMS);
-        setCardsMessage("Backend unavailable. Showing local demo cards.");
+        setEventItems([]);
+        const message = error instanceof Error ? error.message : "Unable to load events.";
+        setCardsMessage(`Live event cards unavailable (${message}).`);
       }
     }
 

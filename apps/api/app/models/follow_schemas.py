@@ -15,3 +15,13 @@ class FollowRead(BaseModel):
     artist_id: str
     created_at: datetime
     stage_name: str
+
+
+class VenueFollowCreate(BaseModel):
+    venue_id: str
+
+
+class VenueFollowRead(BaseModel):
+    venue_id: str
+    created_at: datetime
+    venue_name: str

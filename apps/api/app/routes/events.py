@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Optional, List, Any, Literal, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Query, HTTPException, Depends
+from fastapi import APIRouter, Query, HTTPException, Depends, status
 
 from app.db.supabase import get_supabase_client
 from app.models.event_schemas import EventSummary, EventSearchResponse, EventDetail
@@ -12,33 +12,6 @@ from app.core.auth import require_user_id
 router = APIRouter()
 
 EventSort = Literal["recommended", "dateSoonest", "dateLatest"]
-
-_SAMPLE_EVENTS = [
-    {
-        "id": "evt_100",
-        "title": "Downtown Acoustic Showcase",
-        "venue_name": "Blue Room",
-        "start_time": "2026-03-28T20:00:00+00:00",
-        "category": "live-music",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_101",
-        "title": "Late Night DJ Set",
-        "venue_name": "Signal House",
-        "start_time": "2026-03-29T01:00:00+00:00",
-        "category": "electronic",
-        "zip_code": "10001",
-    },
-    {
-        "id": "evt_102",
-        "title": "Comedy Open Mic",
-        "venue_name": "Brick Room",
-        "start_time": "2026-03-30T23:30:00+00:00",
-        "category": "comedy",
-        "zip_code": "10002",
-    },
-]
 
 
 def _get_supabase_client_or_503():
@@ -78,94 +51,6 @@ def _sort_event_rows(rows: List[dict[str, Any]], sort: EventSort) -> List[dict[s
     if sort == "dateLatest":
         sorted_rows.reverse()
     return sorted_rows
-
-
-def _search_sample_events(
-    query: Optional[str],
-    zip_code: Optional[str],
-    start_after: Optional[datetime],
-    start_before: Optional[datetime],
-    categories: Optional[List[str]],
-    venue: Optional[str],
-    sort: EventSort,
-    type_tokens: List[str],
-    page: int,
-    limit: int,
-) -> EventSearchResponse:
-    filtered = list(_SAMPLE_EVENTS)
-
-    if zip_code:
-        filtered = [row for row in filtered if row.get("zip_code") == zip_code]
-
-    if categories:
-        allowed = {item.lower() for item in categories}
-        filtered = [row for row in filtered if str(row.get("category", "")).lower() in allowed]
-
-    if query:
-        needle = query.strip().lower()
-        filtered = [
-            row
-            for row in filtered
-            if needle in str(row.get("title", "")).lower()
-            or needle in str(row.get("venue_name", "")).lower()
-            or needle in str(row.get("category", "")).lower()
-        ]
-
-    if venue:
-        venue_needle = venue.strip().lower()
-        filtered = [row for row in filtered if venue_needle in str(row.get("venue_name", "")).lower()]
-
-    if type_tokens:
-        filtered = [
-            row
-            for row in filtered
-            if _matches_type_tokens(str(row.get("title", "")), str(row.get("category", "")), type_tokens)
-        ]
-
-    def event_dt(row: dict[str, Any]) -> Optional[datetime]:
-        raw = row.get("start_time")
-        if not raw:
-            return None
-        try:
-            return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-        except ValueError:
-            return None
-
-    if start_after:
-        filtered = [
-            row for row in filtered if (event_dt(row) is not None and event_dt(row) >= start_after)
-        ]
-
-    if start_before:
-        filtered = [
-            row for row in filtered if (event_dt(row) is not None and event_dt(row) <= start_before)
-        ]
-
-    if not start_after and not start_before:
-        now_utc = datetime.now(timezone.utc)
-        filtered = [row for row in filtered if (event_dt(row) is not None and event_dt(row) >= now_utc)]
-
-    ordered = _sort_event_rows(filtered, sort)
-    total = len(ordered)
-    offset = (page - 1) * limit
-    paged = ordered[offset : offset + limit]
-
-    return EventSearchResponse(
-        items=[
-            EventSummary(
-                id=str(row["id"]),
-                title=str(row["title"]),
-                venue_name=str(row.get("venue_name") or "Unknown Venue"),
-                start_time=str(row["start_time"]),
-                category=str(row["category"]),
-                zip_code=str(row["zip_code"]),
-            )
-            for row in paged
-        ],
-        page=page,
-        limit=limit,
-        total=total,
-    )
 
 
 def build_event_query(
@@ -238,7 +123,13 @@ def list_events(
     if zip_code:
         query = query.eq("zip_code", zip_code)
 
-    response = query.execute()
+    try:
+        response = query.execute()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to load events",
+        )
     rows = response.data or []
 
     return [
@@ -279,21 +170,7 @@ def search_events(
         raise HTTPException(status_code=422, detail="Invalid sort value. Use recommended, dateSoonest, or dateLatest.")
     sort_value = cast(EventSort, sort)
 
-    try:
-        client = get_supabase_client()
-    except RuntimeError:
-        return _search_sample_events(
-            query=query,
-            zip_code=zip_code,
-            start_after=start_after,
-            start_before=start_before,
-            categories=categories,
-            venue=venue,
-            sort=sort_value,
-            type_tokens=type_tokens,
-            page=page,
-            limit=limit,
-        )
+    client = _get_supabase_client_or_503()
 
     offset = (page - 1) * limit
 
@@ -310,7 +187,13 @@ def search_events(
         include_count=True,
     ).range(offset, offset + limit - 1)
 
-    response = supabase_query.execute()
+    try:
+        response = supabase_query.execute()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to search events",
+        )
     rows = response.data or []
     if type_tokens:
         rows = [
@@ -472,13 +355,19 @@ async def get_event_artists(event_id: str):
 
     client = _get_supabase_client_or_503()
 
-    response = (
-        client
-        .table("event_artists")
-        .select("artists(id, stage_name, genre, media_url)")
-        .eq("event_id", str(parsed_event_id))
-        .execute()
-    )
+    try:
+        response = (
+            client
+            .table("event_artists")
+            .select("artists(id, stage_name, genre, media_url)")
+            .eq("event_id", str(parsed_event_id))
+            .execute()
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to load event artists",
+        )
 
     data = response.data or []
 
@@ -504,13 +393,19 @@ def get_event(event_id: str):
 
     client = _get_supabase_client_or_503()
 
-    response = (
-        client.table("events")
-        .select("id,title,description,start_time,end_time,category,zip_code,ticket_url,venues(name)")
-        .eq("id", str(parsed_event_id))
-        .single()
-        .execute()
-    )
+    try:
+        response = (
+            client.table("events")
+            .select("id,title,description,start_time,end_time,category,zip_code,ticket_url,venues(name)")
+            .eq("id", str(parsed_event_id))
+            .single()
+            .execute()
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to load event",
+        )
 
     row = response.data
 

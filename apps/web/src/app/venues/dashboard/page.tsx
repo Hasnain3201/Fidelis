@@ -2,11 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getMyVenue, type VenueProfileResponse } from "@/lib/api";
+import { getMyVenue, listMyVenueEvents, type EventSummary, type VenueProfileResponse } from "@/lib/api";
 import { getAuthChangeEventName, getStoredAuthSession, type AuthSession } from "@/lib/auth";
-import { EVENT_ITEMS } from "@/lib/mock-content";
-
-const VENUE_EVENTS = EVENT_ITEMS.slice(0, 4);
 
 function getRoleDashboardHref(session: AuthSession): string {
   if (session.role === "artist") return "/artists/dashboard";
@@ -20,9 +17,21 @@ function getLocationLabel(venue: VenueProfileResponse): string {
   return venue.zip_code;
 }
 
+function formatDateTime(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return "Date TBD";
+  return parsed.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export default function VenueDashboardPage() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [venueProfile, setVenueProfile] = useState<VenueProfileResponse | null>(null);
+  const [venueEvents, setVenueEvents] = useState<EventSummary[]>([]);
   const [isLoadingVenue, setIsLoadingVenue] = useState(false);
   const [venueError, setVenueError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -52,12 +61,17 @@ export default function VenueDashboardPage() {
       setVenueError(null);
 
       try {
-        const profile = await getMyVenue(currentSession);
+        const [profile, events] = await Promise.all([
+          getMyVenue(currentSession),
+          listMyVenueEvents(currentSession, 50),
+        ]);
         if (cancelled) return;
         setVenueProfile(profile);
+        setVenueEvents(events);
       } catch (error) {
         if (cancelled) return;
         setVenueProfile(null);
+        setVenueEvents([]);
         const message = error instanceof Error ? error.message : "Unable to load venue profile.";
         setVenueError(message);
       } finally {
@@ -69,6 +83,7 @@ export default function VenueDashboardPage() {
 
     if (!session || session.role !== "venue") {
       setVenueProfile(null);
+      setVenueEvents([]);
       setVenueError(null);
       setIsLoadingVenue(false);
       return;
@@ -207,36 +222,41 @@ export default function VenueDashboardPage() {
           <div className="dashboardGrid">
             <div className="miniCard">
               <strong>Upcoming Events</strong>
-              <p>{VENUE_EVENTS.length}</p>
+              <p>{venueEvents.length}</p>
             </div>
             <div className="miniCard">
-              <strong>Booked Tickets</strong>
-              <p>142</p>
+              <strong>Profile Status</strong>
+              <p>{venueProfile.verified ? "Verified" : "Pending"}</p>
             </div>
             <div className="miniCard">
-              <strong>Followers</strong>
-              <p>928</p>
+              <strong>ZIP</strong>
+              <p>{venueProfile.zip_code}</p>
             </div>
           </div>
 
           <div className="dashboardContentGrid">
             <div className="card">
               <h2>Upcoming Schedule</h2>
-              <div className="listStack">
-                {VENUE_EVENTS.map((event) => (
-                  <div key={event.id} className="listItemRow">
-                    <div>
-                      <strong>{event.title}</strong>
-                      <p className="meta">
-                        {event.dateLabel} • {event.timeLabel} • {event.price}
-                      </p>
+              {venueEvents.length === 0 ? (
+                <div className="emptyStateCard compact">
+                  <h3>No upcoming events yet.</h3>
+                  <p className="meta">Publish your first event to populate this schedule.</p>
+                </div>
+              ) : (
+                <div className="listStack">
+                  {venueEvents.map((event) => (
+                    <div key={event.id} className="listItemRow">
+                      <div>
+                        <strong>{event.title}</strong>
+                        <p className="meta">{formatDateTime(event.start_time)} • {event.category}</p>
+                      </div>
+                      <Link href={`/events/${event.id}`} className="pageActionLink secondary">
+                        View
+                      </Link>
                     </div>
-                    <Link href={`/events/${event.id}`} className="pageActionLink secondary">
-                      View
-                    </Link>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="card">

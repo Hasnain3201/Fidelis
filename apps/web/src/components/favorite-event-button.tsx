@@ -10,7 +10,10 @@ type FavoriteEventButtonProps = {
   className?: string;
 };
 
-export function FavoriteEventButton({ eventId, className = "pageActionLink secondary" }: FavoriteEventButtonProps) {
+export function FavoriteEventButton({
+  eventId,
+  className = "pageActionLink secondary",
+}: FavoriteEventButtonProps) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isSaved, setIsSaved] = useState(false);
   const [isPending, setIsPending] = useState(false);
@@ -70,7 +73,6 @@ export function FavoriteEventButton({ eventId, className = "pageActionLink secon
     }
 
     setIsPending(true);
-
     try {
       if (isSaved) {
         await removeFavorite(eventId, session);
@@ -82,7 +84,7 @@ export function FavoriteEventButton({ eventId, className = "pageActionLink secon
         setFeedback("Saved to favorites.");
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to update favorites right now.";
+      const message = error instanceof Error ? error.message : "Unable to update favorites.";
       setFeedback(message);
     } finally {
       setIsPending(false);

@@ -1,12 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-
+from typing import Optional
 from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.auth import AuthContext, require_managed_artist, require_role
 
-from app.db.supabase import get_supabase_client_for_user
+from app.db.supabase import get_supabase_client, get_supabase_client_for_user
 from app.db.supabase_admin import get_supabase_admin_client
-from app.db.supabase import get_supabase_client
 
 from app.models.artist_schemas import ArtistProfileCreate, ArtistProfileRead, ArtistProfileUpdate
 
@@ -15,9 +15,39 @@ router = APIRouter()
 _ARTIST_COLS = "id,stage_name,genre,bio,media_url,created_at,updated_at"
 
 
+def _get_supabase_client_or_503():
+    try:
+        return get_supabase_client()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+
 # ---------------------------------------------------------------------------
 # Artist profile  (role: artist + approved claim)
 # ---------------------------------------------------------------------------
+
+@router.get("/", response_model=list[ArtistProfileRead])
+def list_artists(
+    query: Optional[str] = Query(default=None),
+    genre: Optional[str] = Query(default=None),
+    limit: int = Query(default=60, ge=1, le=200),
+):
+    client = _get_supabase_client_or_503()
+    q = client.table("artists").select(_ARTIST_COLS).order("stage_name").limit(limit)
+
+    if query:
+        q = q.ilike("stage_name", f"%{query.strip()}%")
+    if genre:
+        q = q.ilike("genre", f"%{genre.strip()}%")
+
+    try:
+        response = q.execute()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to load artists",
+        )
+    return response.data or []
 
 @router.get("/mine", response_model=ArtistProfileRead)
 def get_my_artist_profile(pair: tuple[AuthContext, str] = Depends(require_managed_artist)):
@@ -110,15 +140,21 @@ def update_artist_profile(
 
 @router.get("/{artist_id}/events")
 async def get_artist_events(artist_id: UUID):
-    client = get_supabase_client()
-    
-    response = (
-        client
-        .table("event_artists")
-        .select("events(id, title, start_time, category, zip_code, venues(name))")
-        .eq("artist_id", artist_id)
-        .execute()
-    )
+    client = _get_supabase_client_or_503()
+
+    try:
+        response = (
+            client
+            .table("event_artists")
+            .select("events(id, title, start_time, category, zip_code, venues(name))")
+            .eq("artist_id", artist_id)
+            .execute()
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to load artist events",
+        )
     
     data = response.data or []
 

@@ -2,28 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { followVenue, listVenueFollows, unfollowVenue } from "@/lib/api";
 import { getAuthChangeEventName, getStoredAuthSession, type AuthSession } from "@/lib/auth";
-
-const LOCAL_VENUE_FOLLOWS_KEY = "livey.local.venue-follows.v1";
-
-function readLocalVenueFollows(): string[] {
-  if (typeof window === "undefined") return [];
-  const raw = window.localStorage.getItem(LOCAL_VENUE_FOLLOWS_KEY);
-  if (!raw) return [];
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item): item is string => typeof item === "string");
-  } catch {
-    return [];
-  }
-}
-
-function writeLocalVenueFollows(nextIds: string[]) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(LOCAL_VENUE_FOLLOWS_KEY, JSON.stringify(nextIds));
-}
 
 type VenueFollowButtonProps = {
   venueId: string;
@@ -32,6 +12,8 @@ type VenueFollowButtonProps = {
 export function VenueFollowButton({ venueId }: VenueFollowButtonProps) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
+  const [isPending, setIsPending] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     function syncSession() {
@@ -51,30 +33,51 @@ export function VenueFollowButton({ venueId }: VenueFollowButtonProps) {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadFollowState(currentSession: AuthSession) {
+      try {
+        const follows = await listVenueFollows(currentSession);
+        if (cancelled) return;
+        setIsFollowing(follows.some((follow) => follow.venue_id === venueId));
+      } catch {
+        if (cancelled) return;
+        setIsFollowing(false);
+      }
+    }
+
     if (!session || session.role !== "user") {
       setIsFollowing(false);
       return;
     }
 
-    const followed = readLocalVenueFollows();
-    setIsFollowing(followed.includes(venueId));
+    void loadFollowState(session);
+    return () => {
+      cancelled = true;
+    };
   }, [session, venueId]);
 
-  function onToggleFollow() {
+  async function onToggleFollow() {
+    setFeedback(null);
     if (!session || session.role !== "user") return;
 
-    const current = readLocalVenueFollows();
-
-    if (current.includes(venueId)) {
-      const next = current.filter((id) => id !== venueId);
-      writeLocalVenueFollows(next);
-      setIsFollowing(false);
-      return;
+    setIsPending(true);
+    try {
+      if (isFollowing) {
+        await unfollowVenue(venueId, session);
+        setIsFollowing(false);
+        setFeedback("Venue unfollowed.");
+      } else {
+        await followVenue(venueId, session);
+        setIsFollowing(true);
+        setFeedback("Venue followed.");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to update venue follow.";
+      setFeedback(message);
+    } finally {
+      setIsPending(false);
     }
-
-    const next = [...current, venueId];
-    writeLocalVenueFollows(next);
-    setIsFollowing(true);
   }
 
   if (!session) {
@@ -94,14 +97,15 @@ export function VenueFollowButton({ venueId }: VenueFollowButtonProps) {
   }
 
   return (
-    <button
-      type="button"
-      className="followBtn"
-      onClick={onToggleFollow}
-      aria-pressed={isFollowing}
-      title="Follow venue (local demo mode)"
-    >
-      {isFollowing ? "Following" : "Follow"}
-    </button>
+    <div style={{ display: "grid", gap: 4 }}>
+      <button type="button" className="followBtn" onClick={onToggleFollow} aria-pressed={isFollowing} disabled={isPending}>
+        {isPending ? "..." : isFollowing ? "Following" : "Follow"}
+      </button>
+      {feedback ? (
+        <p className="meta" role="status" style={{ margin: 0, fontSize: 12 }}>
+          {feedback}
+        </p>
+      ) : null}
+    </div>
   );
 }

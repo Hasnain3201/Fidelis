@@ -12,7 +12,7 @@
         "dev": "echo \"Run npm run dev:web and npm run dev:api in separate terminals\"",
         "dev:web": "npm run dev:clean --workspace @fidelis/web",
         "dev:web:clean": "npm run dev:clean --workspace @fidelis/web",
-        "dev:api": "cd apps/api && python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 8000",
+        "dev:api": "cd apps/api && ([ -x .venv/bin/python ] && .venv/bin/python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 || python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 8000)",
         "build:web": "npm run build --workspace @fidelis/web",
         "lint:web": "npm run lint --workspace @fidelis/web"
     }

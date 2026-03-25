@@ -221,3 +221,57 @@ def test_create_artist_profile(mock_admin, artist_client):
     )
     assert resp.status_code == 201
     assert resp.json()["stage_name"] == "New Artist"
+
+
+# ---------------------------------------------------------------------------
+# Venue event creation permissions
+# ---------------------------------------------------------------------------
+
+@patch("app.core.auth.get_managed_venue_ids", return_value=["v1"])
+@patch("app.routes.venues.get_supabase_client_for_user")
+def test_create_venue_event_requires_verified_venue(mock_sb, mock_ids, venue_client):
+    venue_lookup = _chain_mock({"verified": False})
+    client_mock = MagicMock()
+    client_mock.table.side_effect = lambda name: venue_lookup if name == "venues" else _chain_mock([])
+    mock_sb.return_value = client_mock
+
+    resp = venue_client.post(
+        "/api/v1/venues/events",
+        json={
+            "title": "Open Mic Night",
+            "description": "A local talent night with rotating artists.",
+            "category": "live-music",
+            "start_time": "2030-06-01T18:00:00Z",
+            "end_time": "2030-06-01T22:00:00Z",
+            "zip_code": "10001",
+        },
+    )
+
+    assert resp.status_code == 403
+    assert "verified venues" in resp.json()["detail"].lower()
+
+
+@patch("app.core.auth.get_managed_venue_ids", return_value=["v1"])
+@patch("app.routes.venues.get_supabase_client_for_user")
+def test_create_venue_event_verified_venue_succeeds(mock_sb, mock_ids, venue_client):
+    venue_lookup = _chain_mock({"verified": True})
+    event_insert = _chain_mock({"id": "evt_new"})
+
+    client_mock = MagicMock()
+    client_mock.table.side_effect = lambda name: venue_lookup if name == "venues" else event_insert
+    mock_sb.return_value = client_mock
+
+    resp = venue_client.post(
+        "/api/v1/venues/events",
+        json={
+            "title": "Open Mic Night",
+            "description": "A local talent night with rotating artists.",
+            "category": "live-music",
+            "start_time": "2030-06-01T18:00:00Z",
+            "end_time": "2030-06-01T22:00:00Z",
+            "zip_code": "10001",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["id"] == "evt_new"

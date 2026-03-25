@@ -3,19 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FilterBar } from "@/components/filter-bar";
-import { EventShowcaseCard } from "@/components/showcase-cards";
+import { EventShowcaseCard, type EventCardItem } from "@/components/showcase-cards";
 import { Input } from "@/components/ui/input";
 import {
   searchEventsWithFilters,
   type EventSearchSort,
   type EventSummary,
 } from "@/lib/api";
-import { EVENT_ITEMS, type EventItem } from "@/lib/mock-content";
 import {
   isValidZipCode,
   normalizeZipInput,
   toZip5,
-  zipMatchesEvent,
 } from "@/lib/zip";
 
 const CATEGORY_FILTERS = [
@@ -61,58 +59,6 @@ type SearchSnapshot = {
   page: number;
 };
 
-function parseEventDateTime(item: EventItem): Date | null {
-  const baseLabel = item.dateLabel.includes(",")
-    ? item.dateLabel.split(",")[1].trim()
-    : item.dateLabel.trim();
-  const year = new Date().getFullYear();
-  const parsedDate = new Date(`${baseLabel}, ${year}`);
-  if (Number.isNaN(parsedDate.getTime())) return null;
-
-  const timeMatch = item.timeLabel.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-  if (!timeMatch) return parsedDate;
-
-  let hours = Number(timeMatch[1]);
-  const minutes = Number(timeMatch[2]);
-  const meridiem = timeMatch[3].toUpperCase();
-  if (meridiem === "PM" && hours < 12) hours += 12;
-  if (meridiem === "AM" && hours === 12) hours = 0;
-
-  parsedDate.setHours(hours, minutes, 0, 0);
-  return parsedDate;
-}
-
-function matchesDateWindow(item: EventItem, window: DateWindow): boolean {
-  if (window === "any") return true;
-  const eventDate = parseEventDateTime(item);
-  if (!eventDate) return false;
-
-  const now = new Date();
-  const diffMs = eventDate.getTime() - now.getTime();
-  if (diffMs < 0) return false;
-
-  if (window === "weekend") {
-    const day = eventDate.getDay();
-    return day === 5 || day === 6 || day === 0;
-  }
-  if (window === "next7") return diffMs <= 7 * 24 * 60 * 60 * 1000;
-  if (window === "next30") return diffMs <= 30 * 24 * 60 * 60 * 1000;
-  return true;
-}
-
-function sortFallbackResults(items: EventItem[], sortBy: EventSearchSort): EventItem[] {
-  if (sortBy === "recommended") return items;
-
-  const sorted = [...items];
-  sorted.sort((a, b) => {
-    const aDate = parseEventDateTime(a)?.getTime() ?? Number.MAX_SAFE_INTEGER;
-    const bDate = parseEventDateTime(b)?.getTime() ?? Number.MAX_SAFE_INTEGER;
-    if (sortBy === "dateLatest") return bDate - aDate;
-    return aDate - bDate;
-  });
-  return sorted;
-}
-
 function toTitleCase(value: string): string {
   return value
     .split("-")
@@ -139,7 +85,7 @@ function formatTimeLabel(value: string): string {
   });
 }
 
-function mapSummaryToCardItem(item: EventSummary, index: number): EventItem {
+function mapSummaryToCardItem(item: EventSummary, index: number): EventCardItem {
   const categoryLabel = toTitleCase(item.category);
   return {
     id: item.id,
@@ -260,44 +206,6 @@ function getDateWindowBounds(window: DateWindow): {
   return {};
 }
 
-function buildFallbackResults(snapshot: SearchSnapshot): EventItem[] {
-  const normalizedQuery = snapshot.query.trim().toLowerCase();
-  const normalizedVenue = snapshot.venueQuery.trim().toLowerCase();
-
-  const filtered = EVENT_ITEMS.filter((item) => {
-    const queryMatch =
-      !normalizedQuery ||
-      item.title.toLowerCase().includes(normalizedQuery) ||
-      item.description.toLowerCase().includes(normalizedQuery) ||
-      item.venue.toLowerCase().includes(normalizedQuery) ||
-      item.tags.some((tag) => tag.toLowerCase().includes(normalizedQuery));
-
-    const zipMatch = !snapshot.zipCode.trim() || zipMatchesEvent(snapshot.zipCode, item.zipCode);
-    const venueMatch = !normalizedVenue || item.venue.toLowerCase().includes(normalizedVenue);
-
-    const categoryMatch =
-      snapshot.activeCategory === "All" ||
-      item.subtitle.toLowerCase().includes(snapshot.activeCategory.toLowerCase()) ||
-      item.tags.some((tag) => tag.toLowerCase().includes(snapshot.activeCategory.toLowerCase()));
-
-    const eventTypeMatch =
-      snapshot.selectedTypes.length === 0 ||
-      snapshot.selectedTypes.some((type) => {
-        const normalizedType = type.toLowerCase();
-        return (
-          item.subtitle.toLowerCase().includes(normalizedType) ||
-          item.tags.some((tag) => tag.toLowerCase().includes(normalizedType))
-        );
-      });
-
-    const dateMatch = matchesDateWindow(item, snapshot.dateWindow);
-
-    return queryMatch && zipMatch && venueMatch && categoryMatch && eventTypeMatch && dateMatch;
-  });
-
-  return sortFallbackResults(filtered, snapshot.sortBy);
-}
-
 function parseSort(value: string | null): EventSearchSort {
   if (value && SORT_OPTIONS.includes(value as EventSearchSort)) {
     return value as EventSearchSort;
@@ -328,7 +236,7 @@ export function SearchResultsClient() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const [results, setResults] = useState<EventItem[]>([]);
+  const [results, setResults] = useState<EventCardItem[]>([]);
   const [totalResults, setTotalResults] = useState(0);
   const [isFiltering, setIsFiltering] = useState(true);
   const [statusMessage, setStatusMessage] = useState<{ type: "error"; text: string } | null>(null);
@@ -450,24 +358,14 @@ export function SearchResultsClient() {
       .catch((error: unknown) => {
         if (requestId !== requestIdRef.current) return;
 
-        const fallbackAll = buildFallbackResults(snapshot);
-        const fallbackTotal = fallbackAll.length;
-        const fallbackTotalPages = Math.max(1, Math.ceil(fallbackTotal / PAGE_SIZE));
-
-        if (snapshot.page > fallbackTotalPages) {
-          updatePageInUrl(fallbackTotalPages);
-          return;
-        }
-
-        const offset = (snapshot.page - 1) * PAGE_SIZE;
-        setResults(fallbackAll.slice(offset, offset + PAGE_SIZE));
-        setTotalResults(fallbackTotal);
+        setResults([]);
+        setTotalResults(0);
 
         const message =
           error instanceof Error ? error.message : "Live search is temporarily unavailable.";
         setStatusMessage({
           type: "error",
-          text: `Live search unavailable (${message}). Showing local fallback results.`,
+          text: `Live search unavailable (${message}).`,
         });
       })
       .finally(() => {

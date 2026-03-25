@@ -6,7 +6,6 @@ import { CopyLinkButton } from "@/components/copy-link-button";
 import { ArtistFollowButton } from "@/components/artist-follow-button";
 import { FavoriteEventButton } from "@/components/favorite-event-button";
 import { getEventArtists, getEventDetail, type EventArtist, type EventDetailResponse } from "@/lib/api";
-import { EVENT_ITEMS } from "@/lib/mock-content";
 
 type EventDetailPageProps = {
   params: Promise<{ id: string }>;
@@ -52,46 +51,6 @@ function pickImage(eventId: string): string {
   return EVENT_DETAIL_IMAGES[hash];
 }
 
-function toCategorySlug(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-function toMockStartIso(dateLabel: string, timeLabel: string): string {
-  const year = new Date().getFullYear();
-  const baseDate = dateLabel.includes(",") ? dateLabel.split(",").slice(1).join(",").trim() : dateLabel;
-  const parsed = new Date(`${baseDate}, ${year} ${timeLabel}`);
-  if (Number.isNaN(parsed.getTime())) {
-    return new Date().toISOString();
-  }
-  return parsed.toISOString();
-}
-
-function buildMockEventDetail(eventId: string): EventDetailResponse | null {
-  const mock = EVENT_ITEMS.find((item) => item.id === eventId);
-  if (!mock) return null;
-
-  const start = toMockStartIso(mock.dateLabel, mock.timeLabel);
-  const endDate = new Date(start);
-  endDate.setHours(endDate.getHours() + 2);
-
-  const categorySource = mock.tags[0] || mock.subtitle || "Live Event";
-
-  return {
-    id: mock.id,
-    title: mock.title,
-    description: mock.description,
-    venue_name: mock.venue,
-    category: toCategorySlug(categorySource) || "live-event",
-    start_time: start,
-    end_time: endDate.toISOString(),
-    zip_code: mock.zipCode,
-    ticket_url: null,
-  };
-}
-
 export default async function EventDetailPage({ params }: EventDetailPageProps) {
   const { id } = await params;
 
@@ -99,10 +58,7 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
   try {
     event = await getEventDetail(id);
   } catch (error) {
-    const mockEvent = buildMockEventDetail(id);
-    if (mockEvent) {
-      event = mockEvent;
-    } else if (error instanceof Error && error.message.toLowerCase().includes("not found")) {
+    if (error instanceof Error && error.message.toLowerCase().includes("not found")) {
       notFound();
     } else {
       throw error;

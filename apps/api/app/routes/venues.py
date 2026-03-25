@@ -1,10 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.auth import AuthContext, require_managed_venue, require_role
-from app.db.supabase import get_supabase_client_for_user
+from app.db.supabase import get_supabase_client, get_supabase_client_for_user
 from app.db.supabase_admin import get_supabase_admin_client
 
-from app.models.event_schemas import EventCreate, EventCreated
+from app.models.event_schemas import EventCreate, EventCreated, EventSummary
 from app.models.venue_schemas import VenueProfileCreate, VenueProfileRead, VenueProfileUpdate
 
 router = APIRouter()
@@ -12,9 +15,45 @@ router = APIRouter()
 _VENUE_COLS = "id,name,description,address_line,city,state,zip_code,verified,created_at,updated_at"
 
 
+def _get_supabase_client_or_503():
+    try:
+        return get_supabase_client()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+
 # ---------------------------------------------------------------------------
 # Venue profile  (role: venue + approved claim)
 # ---------------------------------------------------------------------------
+
+@router.get("/", response_model=list[VenueProfileRead])
+def list_venues(
+    zip_code: Optional[str] = Query(default=None, pattern=r"^\d{5}$"),
+    city: Optional[str] = Query(default=None),
+    state: Optional[str] = Query(default=None),
+    query: Optional[str] = Query(default=None),
+    limit: int = Query(default=60, ge=1, le=200),
+):
+    client = _get_supabase_client_or_503()
+    q = client.table("venues").select(_VENUE_COLS).order("name").limit(limit)
+
+    if zip_code:
+        q = q.eq("zip_code", zip_code)
+    if city:
+        q = q.ilike("city", f"%{city.strip()}%")
+    if state:
+        q = q.ilike("state", f"%{state.strip()}%")
+    if query:
+        q = q.ilike("name", f"%{query.strip()}%")
+
+    try:
+        response = q.execute()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to load venues",
+        )
+    return response.data or []
 
 @router.get("/mine", response_model=VenueProfileRead)
 def get_my_venue(pair: tuple[AuthContext, str] = Depends(require_managed_venue)):
@@ -37,6 +76,44 @@ def get_my_venue(pair: tuple[AuthContext, str] = Depends(require_managed_venue))
     if not response.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Venue not found")
     return response.data
+
+
+@router.get("/mine/events", response_model=list[EventSummary])
+def get_my_venue_events(
+    pair: tuple[AuthContext, str] = Depends(require_managed_venue),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    auth, venue_id = pair
+    try:
+        client = get_supabase_client_for_user(auth.access_token)
+        now_utc = datetime.now(timezone.utc).isoformat()
+        response = (
+            client.table("events")
+            .select("id,title,start_time,category,zip_code,venues(name)")
+            .eq("venue_id", venue_id)
+            .gte("start_time", now_utc)
+            .order("start_time")
+            .limit(limit)
+            .execute()
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to load venue events",
+        )
+
+    rows = response.data or []
+    return [
+        EventSummary(
+            id=row["id"],
+            title=row["title"],
+            venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
+            start_time=row["start_time"],
+            category=row["category"],
+            zip_code=row["zip_code"],
+        )
+        for row in rows
+    ]
 
 
 @router.post("/mine", status_code=status.HTTP_201_CREATED, response_model=VenueProfileRead)
@@ -116,9 +193,30 @@ def create_venue_event(
     pair: tuple[AuthContext, str] = Depends(require_managed_venue),
 ):
     auth, venue_id = pair
+    try:
+        client = get_supabase_client_for_user(auth.access_token)
+        venue_response = (
+            client.table("venues")
+            .select("verified")
+            .eq("id", venue_id)
+            .single()
+            .execute()
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to verify venue access",
+        )
+
+    venue_row = venue_response.data or {}
+    if not venue_row.get("verified", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only verified venues can publish events",
+        )
+
     event_payload = {
         "venue_id": venue_id,
-        "created_by": auth.user_id,
         "title": payload.title,
         "description": payload.description,
         "category": payload.category,
@@ -129,7 +227,6 @@ def create_venue_event(
     }
 
     try:
-        client = get_supabase_client_for_user(auth.access_token)
         insert_response = (
             client.table("events")
             .insert(event_payload)

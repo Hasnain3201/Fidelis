@@ -2,9 +2,45 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArtistFollowButton } from "@/components/artist-follow-button";
 import { VenueFollowButton } from "@/components/venue-follow-button";
-import type { ArtistItem, EventItem, VenueItem } from "@/lib/mock-content";
 
-export function EventShowcaseCard({ item }: { item: EventItem }) {
+export type EventCardItem = {
+  id: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  dateLabel: string;
+  timeLabel: string;
+  zipCode: string;
+  location: string;
+  venue: string;
+  price: string;
+  image: string;
+  tags: string[];
+  badge?: string;
+};
+
+export type VenueCardItem = {
+  id: string;
+  name: string;
+  tagline: string;
+  description: string;
+  location: string;
+  image: string;
+  tags?: string[];
+  badge?: string;
+};
+
+export type ArtistCardItem = {
+  id: string;
+  name: string;
+  location: string;
+  description: string;
+  image: string;
+  tags?: string[];
+  badge?: string;
+};
+
+export function EventShowcaseCard({ item }: { item: EventCardItem }) {
   return (
     <article className="showCard">
       <Link href={`/events/${item.id}`} className="showCardLink" aria-label={`Open ${item.title} details`}>
@@ -41,7 +77,7 @@ export function EventShowcaseCard({ item }: { item: EventItem }) {
   );
 }
 
-export function VenueCard({ item }: { item: VenueItem }) {
+export function VenueCard({ item }: { item: VenueCardItem }) {
   return (
     <article className="showCard compactCard">
       <div className="mediaWrap">
@@ -58,7 +94,7 @@ export function VenueCard({ item }: { item: VenueItem }) {
         <div className="cardMeta">{item.location}</div>
 
         <div className="tagRow">
-          {item.tags.map((tag) => (
+          {(item.tags ?? []).map((tag) => (
             <span key={tag} className="tagPill soft">
               {tag}
             </span>
@@ -69,7 +105,7 @@ export function VenueCard({ item }: { item: VenueItem }) {
   );
 }
 
-export function ArtistCard({ item }: { item: ArtistItem }) {
+export function ArtistCard({ item }: { item: ArtistCardItem }) {
   return (
     <article className="showCard compactCard">
       <div className="mediaWrap">
@@ -84,7 +120,7 @@ export function ArtistCard({ item }: { item: ArtistItem }) {
         <p>{item.description}</p>
 
         <div className="tagRow">
-          {item.tags.map((tag) => (
+          {(item.tags ?? []).map((tag) => (
             <span key={tag} className="tagPill">
               {tag}
             </span>
