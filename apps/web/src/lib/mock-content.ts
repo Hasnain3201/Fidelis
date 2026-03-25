@@ -206,7 +206,7 @@ export const VENUE_ITEMS: VenueItem[] = [
     description: "A cozy and modern space featuring top DJs and curated live sets.",
     location: "Dallas, TX",
     image:
-      "https://images.unsplash.com/photo-1566737236500-c8ac43014a8e?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=900&q=80",
     tags: ["Food", "Live Stage"],
     badge: "Bar/Pub",
   },
