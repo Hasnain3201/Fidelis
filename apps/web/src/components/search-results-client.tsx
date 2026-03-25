@@ -157,17 +157,64 @@ function mapSummaryToCardItem(item: EventSummary, index: number): EventItem {
   };
 }
 
-function toGenreFilter(category: string): string | undefined {
-  if (category === "All") return undefined;
+function toCategoryToken(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, "-");
+}
 
-  if (category === "Comedy") return "comedy";
-  if (category === "Live Music") return "live-music";
-  if (category === "Concert") return "live-music";
-  if (category === "DJ") return "live-music";
-  if (category === "Acoustic") return "live-music";
-  if (category === "Electronic") return "live-music";
+function categoriesForActiveCategory(activeCategory: string): string[] {
+  if (activeCategory === "All") return [];
+  if (activeCategory === "Live Music") {
+    return ["live-music", "concert", "dj-set", "acoustic", "electronic", "band", "indie-pop"];
+  }
+  if (activeCategory === "Concert") return ["concert", "live-music"];
+  if (activeCategory === "Comedy") return ["comedy", "comedy-show"];
+  if (activeCategory === "DJ") return ["dj-set", "dj", "electronic"];
+  if (activeCategory === "Acoustic") return ["acoustic"];
+  if (activeCategory === "Electronic") return ["electronic", "dj-set"];
+  return [toCategoryToken(activeCategory)];
+}
 
-  return category.toLowerCase().replace(/\s+/g, "-");
+function categoriesForSelectedTypes(selectedTypes: string[]): string[] {
+  const out: string[] = [];
+
+  for (const item of selectedTypes) {
+    if (item === "Live Music") {
+      out.push("live-music");
+      continue;
+    }
+    if (item === "Concert") {
+      out.push("concert");
+      continue;
+    }
+    if (item === "DJ Set") {
+      out.push("dj-set", "dj", "electronic");
+      continue;
+    }
+    if (item === "Comedy Show") {
+      out.push("comedy-show", "comedy");
+      continue;
+    }
+    if (item === "Acoustic") {
+      out.push("acoustic");
+      continue;
+    }
+    if (item === "Band") {
+      out.push("band");
+      continue;
+    }
+    if (item === "Indie Pop") {
+      out.push("indie-pop");
+      continue;
+    }
+
+    out.push(toCategoryToken(item));
+  }
+
+  return out;
+}
+
+function buildApiCategories(activeCategory: string, selectedTypes: string[]): string[] {
+  return [...new Set([...categoriesForActiveCategory(activeCategory), ...categoriesForSelectedTypes(selectedTypes)])];
 }
 
 function getDateWindowBounds(window: DateWindow): {
@@ -370,15 +417,14 @@ export function SearchResultsClient() {
     setIsFiltering(true);
     setStatusMessage(null);
 
-    const genre = toGenreFilter(snapshot.activeCategory);
+    const categories = buildApiCategories(snapshot.activeCategory, snapshot.selectedTypes);
     const windowBounds = getDateWindowBounds(snapshot.dateWindow);
 
     void searchEventsWithFilters({
       zip: toZip5(snapshot.zipCode),
       query: snapshot.query || undefined,
       venue: snapshot.venueQuery || undefined,
-      genre,
-      types: snapshot.selectedTypes.length ? snapshot.selectedTypes : undefined,
+      categories: categories.length ? categories : undefined,
       sort: snapshot.sortBy,
       startAfter: windowBounds.startAfter,
       startBefore: windowBounds.startBefore,
@@ -439,22 +485,18 @@ export function SearchResultsClient() {
   }, []);
 
   function toggleEventType(value: string) {
-    setSelectedTypes((current) => {
-      const next = current.includes(value)
-        ? current.filter((item) => item !== value)
-        : [...current, value];
-      setParams({ types: next.length ? next.join(",") : null, page: null });
-      return next;
-    });
+    const next = selectedTypes.includes(value)
+      ? selectedTypes.filter((item) => item !== value)
+      : [...selectedTypes, value];
+    setSelectedTypes(next);
+    setParams({ types: next.length ? next.join(",") : null, page: null });
   }
 
   const removeTypeChip = useCallback((value: string) => {
-    setSelectedTypes((current) => {
-      const next = current.filter((item) => item !== value);
-      setParams({ types: next.length ? next.join(",") : null, page: null });
-      return next;
-    });
-  }, [setParams]);
+    const next = selectedTypes.filter((item) => item !== value);
+    setSelectedTypes(next);
+    setParams({ types: next.length ? next.join(",") : null, page: null });
+  }, [selectedTypes, setParams]);
 
   function resetFilters() {
     setVenueQuery("");

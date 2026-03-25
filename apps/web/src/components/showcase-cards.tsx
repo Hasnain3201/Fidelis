@@ -1,5 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
+import { ArtistFollowButton } from "@/components/artist-follow-button";
+import { VenueFollowButton } from "@/components/venue-follow-button";
 import type { ArtistItem, EventItem, VenueItem } from "@/lib/mock-content";
 
 export function EventShowcaseCard({ item }: { item: EventItem }) {
@@ -45,9 +47,7 @@ export function VenueCard({ item }: { item: VenueItem }) {
       <div className="mediaWrap">
         <Image src={item.image} alt={item.name} fill sizes="(max-width: 760px) 100vw, (max-width: 1080px) 50vw, 33vw" />
         {item.badge ? <span className="pillTop">{item.badge}</span> : null}
-        <button className="followBtn" type="button">
-          Follow
-        </button>
+        <VenueFollowButton venueId={item.id} />
       </div>
 
       <div className="cardBody">
@@ -75,9 +75,7 @@ export function ArtistCard({ item }: { item: ArtistItem }) {
       <div className="mediaWrap">
         <Image src={item.image} alt={item.name} fill sizes="(max-width: 760px) 100vw, (max-width: 1080px) 50vw, 33vw" />
         {item.badge ? <span className="pillTop">{item.badge}</span> : null}
-        <button className="followBtn" type="button">
-          Follow
-        </button>
+        <ArtistFollowButton artistId={item.id} />
       </div>
 
       <div className="cardBody">

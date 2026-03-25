@@ -3,7 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { CopyLinkButton } from "@/components/copy-link-button";
-import { getEventDetail } from "@/lib/api";
+import { ArtistFollowButton } from "@/components/artist-follow-button";
+import { FavoriteEventButton } from "@/components/favorite-event-button";
+import { getEventArtists, getEventDetail, type EventArtist, type EventDetailResponse } from "@/lib/api";
+import { EVENT_ITEMS } from "@/lib/mock-content";
 
 type EventDetailPageProps = {
   params: Promise<{ id: string }>;
@@ -49,17 +52,72 @@ function pickImage(eventId: string): string {
   return EVENT_DETAIL_IMAGES[hash];
 }
 
+function toCategorySlug(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function toMockStartIso(dateLabel: string, timeLabel: string): string {
+  const year = new Date().getFullYear();
+  const baseDate = dateLabel.includes(",") ? dateLabel.split(",").slice(1).join(",").trim() : dateLabel;
+  const parsed = new Date(`${baseDate}, ${year} ${timeLabel}`);
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date().toISOString();
+  }
+  return parsed.toISOString();
+}
+
+function buildMockEventDetail(eventId: string): EventDetailResponse | null {
+  const mock = EVENT_ITEMS.find((item) => item.id === eventId);
+  if (!mock) return null;
+
+  const start = toMockStartIso(mock.dateLabel, mock.timeLabel);
+  const endDate = new Date(start);
+  endDate.setHours(endDate.getHours() + 2);
+
+  const categorySource = mock.tags[0] || mock.subtitle || "Live Event";
+
+  return {
+    id: mock.id,
+    title: mock.title,
+    description: mock.description,
+    venue_name: mock.venue,
+    category: toCategorySlug(categorySource) || "live-event",
+    start_time: start,
+    end_time: endDate.toISOString(),
+    zip_code: mock.zipCode,
+    ticket_url: null,
+  };
+}
+
 export default async function EventDetailPage({ params }: EventDetailPageProps) {
   const { id } = await params;
 
-  let event;
+  let event: EventDetailResponse | null = null;
   try {
     event = await getEventDetail(id);
   } catch (error) {
-    if (error instanceof Error && error.message.toLowerCase().includes("not found")) {
+    const mockEvent = buildMockEventDetail(id);
+    if (mockEvent) {
+      event = mockEvent;
+    } else if (error instanceof Error && error.message.toLowerCase().includes("not found")) {
       notFound();
+    } else {
+      throw error;
     }
-    throw error;
+  }
+
+  if (!event) {
+    notFound();
+  }
+
+  let artists: EventArtist[] = [];
+  try {
+    artists = await getEventArtists(id);
+  } catch {
+    artists = [];
   }
 
   const categoryLabel = toTitleCase(event.category);
@@ -122,10 +180,7 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
               {/* New: share / copy link */}
               <CopyLinkButton />
 
-              {/* Existing (left as-is) */}
-              <Button type="button" variant="secondary">
-                Save Event
-              </Button>
+              <FavoriteEventButton eventId={event.id} />
 
               <Link href="/search" className="pageActionLink secondary">
                 Back to Search
@@ -147,6 +202,25 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
               Event details, timing, category, and ticket link are now sourced from API payloads instead of Week 2 mock
               cards.
             </p>
+          </div>
+
+          <div className="eventSidebarCard">
+            <h2>Artists</h2>
+            {artists.length ? (
+              <div className="listStack">
+                {artists.map((artist) => (
+                  <div key={artist.id} className="listItemRow">
+                    <div>
+                      <strong>{artist.stage_name || "Artist"}</strong>
+                      <p className="meta">{artist.genre || "Genre TBD"}</p>
+                    </div>
+                    <ArtistFollowButton artistId={artist.id} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="meta">Artist lineup will appear here when linked.</p>
+            )}
           </div>
         </aside>
       </div>

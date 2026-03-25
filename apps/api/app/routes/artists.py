@@ -22,8 +22,8 @@ _ARTIST_COLS = "id,stage_name,genre,bio,media_url,created_at,updated_at"
 @router.get("/mine", response_model=ArtistProfileRead)
 def get_my_artist_profile(pair: tuple[AuthContext, str] = Depends(require_managed_artist)):
     auth, artist_id = pair
-    client = get_supabase_client_for_user(auth.access_token)
     try:
+        client = get_supabase_client_for_user(auth.access_token)
         response = (
             client.table("artists")
             .select(_ARTIST_COLS)
@@ -94,8 +94,8 @@ def update_artist_profile(
             detail="No fields to update",
         )
 
-    client = get_supabase_client_for_user(auth.access_token)
     try:
+        client = get_supabase_client_for_user(auth.access_token)
         response = client.table("artists").update(updates).eq("id", artist_id).execute()
     except Exception:
         raise HTTPException(

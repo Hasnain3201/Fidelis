@@ -6,7 +6,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.core.jwks import verify_supabase_jwt
 
-bearer = HTTPBearer()
+bearer = HTTPBearer(auto_error=False)
 
 
 @dataclass
@@ -42,8 +42,14 @@ def _resolve_role_from_db(user_id: str) -> Optional[str]:
 
 
 def get_auth_context(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer),
 ) -> AuthContext:
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authenticated",
+        )
+
     token = credentials.credentials
 
     try:

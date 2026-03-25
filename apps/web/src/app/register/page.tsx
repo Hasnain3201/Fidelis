@@ -75,6 +75,20 @@ export default function RegisterPage() {
     }
   }
 
+  function setFieldError(field: string, message: string) {
+    setErrors((current) => {
+      if (!message) {
+        if (!(field in current)) return current;
+        const next = { ...current };
+        delete next[field];
+        return next;
+      }
+
+      if (current[field] === message) return current;
+      return { ...current, [field]: message };
+    });
+  }
+
   return (
     <section className="siteSection pageAuth">
       <div className="siteContainer">
@@ -88,7 +102,14 @@ export default function RegisterPage() {
               label="Full Name"
               placeholder="Jane Doe"
               value={fullName}
-              onChange={(event) => setFullName(event.target.value.slice(0, 80))}
+              onChange={(event) => {
+                const value = event.target.value.slice(0, 80);
+                setFullName(value);
+                if (errors.fullName) {
+                  setFieldError("fullName", value.trim().length >= 2 ? "" : "Enter your full name.");
+                }
+              }}
+              onBlur={() => setFieldError("fullName", fullName.trim().length >= 2 ? "" : "Enter your full name.")}
               autoComplete="name"
               aria-invalid={Boolean(errors.fullName)}
               required
@@ -104,7 +125,14 @@ export default function RegisterPage() {
               label="Email"
               placeholder="you@example.com"
               value={email}
-              onChange={(event) => setEmail(event.target.value.slice(0, 160))}
+              onChange={(event) => {
+                const value = event.target.value.slice(0, 160);
+                setEmail(value);
+                if (errors.email) {
+                  setFieldError("email", validateEmail(value.trim().toLowerCase()));
+                }
+              }}
+              onBlur={() => setFieldError("email", validateEmail(email.trim().toLowerCase()))}
               autoComplete="email"
               aria-invalid={Boolean(errors.email)}
               required
@@ -120,7 +148,17 @@ export default function RegisterPage() {
               label="Password"
               placeholder="At least 8 characters"
               value={password}
-              onChange={(event) => setPassword(event.target.value.slice(0, 80))}
+              onChange={(event) => {
+                const value = event.target.value.slice(0, 80);
+                setPassword(value);
+                if (errors.password) {
+                  setFieldError("password", validatePassword(value));
+                }
+                if (errors.confirmPassword && confirmPassword) {
+                  setFieldError("confirmPassword", confirmPassword === value ? "" : "Passwords do not match.");
+                }
+              }}
+              onBlur={() => setFieldError("password", validatePassword(password))}
               autoComplete="new-password"
               aria-invalid={Boolean(errors.password)}
               required
@@ -136,7 +174,19 @@ export default function RegisterPage() {
               label="Confirm Password"
               placeholder="Re-enter password"
               value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value.slice(0, 80))}
+              onChange={(event) => {
+                const value = event.target.value.slice(0, 80);
+                setConfirmPassword(value);
+                if (errors.confirmPassword) {
+                  setFieldError("confirmPassword", value && value === password ? "" : "Passwords do not match.");
+                }
+              }}
+              onBlur={() =>
+                setFieldError(
+                  "confirmPassword",
+                  !confirmPassword ? "Confirm your password." : confirmPassword === password ? "" : "Passwords do not match.",
+                )
+              }
               autoComplete="new-password"
               aria-invalid={Boolean(errors.confirmPassword)}
               required
@@ -157,7 +207,17 @@ export default function RegisterPage() {
             </label>
 
             <label className="checkItem legalCheck">
-              <input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} />
+              <input
+                type="checkbox"
+                checked={acceptedTerms}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setAcceptedTerms(checked);
+                  if (errors.terms) {
+                    setFieldError("terms", checked ? "" : "You must accept the terms to continue.");
+                  }
+                }}
+              />
               I agree to the platform terms and privacy policy.
             </label>
             {errors.terms ? (

@@ -19,8 +19,8 @@ _VENUE_COLS = "id,name,description,address_line,city,state,zip_code,verified,cre
 @router.get("/mine", response_model=VenueProfileRead)
 def get_my_venue(pair: tuple[AuthContext, str] = Depends(require_managed_venue)):
     auth, venue_id = pair
-    client = get_supabase_client_for_user(auth.access_token)
     try:
+        client = get_supabase_client_for_user(auth.access_token)
         response = (
             client.table("venues")
             .select(_VENUE_COLS)
@@ -91,8 +91,8 @@ def update_venue(
             detail="No fields to update",
         )
 
-    client = get_supabase_client_for_user(auth.access_token)
     try:
+        client = get_supabase_client_for_user(auth.access_token)
         response = client.table("venues").update(updates).eq("id", venue_id).execute()
     except Exception:
         raise HTTPException(
@@ -116,8 +116,6 @@ def create_venue_event(
     pair: tuple[AuthContext, str] = Depends(require_managed_venue),
 ):
     auth, venue_id = pair
-    client = get_supabase_client_for_user(auth.access_token)
-
     event_payload = {
         "venue_id": venue_id,
         "created_by": auth.user_id,
@@ -131,6 +129,7 @@ def create_venue_event(
     }
 
     try:
+        client = get_supabase_client_for_user(auth.access_token)
         insert_response = (
             client.table("events")
             .insert(event_payload)

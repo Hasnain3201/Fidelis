@@ -109,13 +109,12 @@ async function getJsonOrThrow<T>(response: Response): Promise<T> {
   return parsed as T;
 }
 
-async function resolveUserRole(userId: string, accessToken: string): Promise<UserRole> {
+async function resolveUserRole(accessToken: string): Promise<UserRole> {
   try {
     const response = await fetch(`${API_BASE}/api/v1/auth/me`, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "X-User-Id": userId,
       },
       cache: "no-store",
     });
@@ -194,8 +193,6 @@ export function getAuthChangeEventName(): string {
 export function getAuthHeaders(session: AuthSession): Record<string, string> {
   return {
     Authorization: `Bearer ${session.accessToken}`,
-    "X-User-Id": session.userId,
-    "X-User-Role": session.role,
   };
 }
 
@@ -218,7 +215,7 @@ export async function signInWithSupabase(email: string, password: string): Promi
     throw new Error("Supabase did not return a valid user id.");
   }
 
-  const resolvedRole = await resolveUserRole(userId, payload.access_token);
+  const resolvedRole = await resolveUserRole(payload.access_token);
   return toSession(payload, resolvedRole);
 }
 
