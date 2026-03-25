@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,12 @@ import { Input } from "@/components/ui/input";
 import { signUpWithSupabase } from "@/lib/auth";
 
 const ACCOUNT_ROLES = ["user", "artist", "venue"] as const;
+type AccountRole = (typeof ACCOUNT_ROLES)[number];
+
+function toAccountRole(value: string | null): AccountRole {
+  if (value === "artist" || value === "venue" || value === "user") return value;
+  return "user";
+}
 
 function validateEmail(email: string): string {
   if (!email) return "Email is required.";
@@ -27,12 +33,18 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [role, setRole] = useState<(typeof ACCOUNT_ROLES)[number]>("user");
+  const [role, setRole] = useState<AccountRole>("user");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const presetRole = toAccountRole(new URLSearchParams(window.location.search).get("role"));
+    setRole((current) => (current === presetRole ? current : presetRole));
+  }, []);
 
   function validateForm() {
     const nextErrors: Record<string, string> = {};

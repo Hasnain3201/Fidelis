@@ -6,41 +6,77 @@ const CTA_ITEMS = [
     title: "Own a Venue?",
     copy: "List your space and connect with artists and fans in your area.",
     button: "List Your Venue",
+    href: "/register?role=venue",
   },
   {
     icon: "🎵",
     title: "Are You an Artist?",
     copy: "Get discovered by venues and build your fanbase locally.",
     button: "Join as Artist",
+    href: "/register?role=artist",
   },
   {
     icon: "👤",
     title: "Love Live Events?",
     copy: "Never miss a show. Get personalized event recommendations.",
     button: "Sign Up Free",
+    href: "/register?role=user",
   },
 ];
 
 const FOOTER_COLUMNS = [
   {
     heading: "Discover",
-    links: ["Browse Events", "Find Venues", "Explore Artists", "This Weekend", "Free Events", "Fundraisers"],
+    links: [
+      { label: "Browse Events", href: "/search" },
+      { label: "Find Venues", href: "/venues" },
+      { label: "Explore Artists", href: "/artists" },
+      { label: "This Weekend", href: "/search?date=weekend" },
+      { label: "Free Events", href: "/search?query=free" },
+      { label: "Fundraisers", href: "/search?query=fundraiser" },
+    ],
   },
   {
     heading: "For Venues",
-    links: ["List Your Venue", "Venue Dashboard", "Create Events", "Promote Events", "Pricing", "Success Stories"],
+    links: [
+      { label: "List Your Venue", href: "/register?role=venue" },
+      { label: "Venue Dashboard", href: "/venues/dashboard" },
+      { label: "Create Events", href: "/venues/create-event" },
+      { label: "Promote Events", href: "/venues/dashboard" },
+      { label: "Pricing", href: "/venues" },
+      { label: "Success Stories", href: "/venues" },
+    ],
   },
   {
     heading: "For Artists",
-    links: ["Join as Artist", "Artist Dashboard", "Find Gigs", "Promote Yourself", "Resources", "Artist Spotlight"],
+    links: [
+      { label: "Join as Artist", href: "/register?role=artist" },
+      { label: "Artist Dashboard", href: "/artists/dashboard" },
+      { label: "Find Gigs", href: "/search" },
+      { label: "Promote Yourself", href: "/artists/dashboard" },
+      { label: "Resources", href: "/artists" },
+      { label: "Artist Spotlight", href: "/artists" },
+    ],
   },
   {
     heading: "Support",
-    links: ["Help Center", "Contact Us", "Privacy Policy", "Terms of Service", "Cookie Policy", "Accessibility"],
+    links: [
+      { label: "Help Center", href: "/help" },
+      { label: "Contact Us", href: "mailto:support@livey.app", external: true },
+      { label: "Privacy Policy", href: "/privacy" },
+      { label: "Terms of Service", href: "/terms" },
+      { label: "Cookie Policy", href: "/cookies" },
+      { label: "Accessibility", href: "/accessibility" },
+    ],
   },
 ];
 
-const SOCIALS = ["IG", "FB", "X", "YT"];
+const SOCIALS = [
+  { label: "IG", href: "https://www.instagram.com", ariaLabel: "Instagram" },
+  { label: "FB", href: "https://www.facebook.com", ariaLabel: "Facebook" },
+  { label: "X", href: "https://x.com", ariaLabel: "X" },
+  { label: "YT", href: "https://www.youtube.com", ariaLabel: "YouTube" },
+];
 
 export function SiteFooter() {
   return (
@@ -54,9 +90,9 @@ export function SiteFooter() {
               </div>
               <h3>{item.title}</h3>
               <p>{item.copy}</p>
-              <button type="button" className="footerTopButton">
+              <Link href={item.href} className="footerTopButton">
                 {item.button}
-              </button>
+              </Link>
             </article>
           ))}
         </div>
@@ -74,8 +110,8 @@ export function SiteFooter() {
             </p>
             <div className="socialRow">
               {SOCIALS.map((item) => (
-                <a key={item} href="#" aria-label={item} className="socialChip">
-                  {item}
+                <a key={item.label} href={item.href} aria-label={item.ariaLabel} className="socialChip" target="_blank" rel="noreferrer">
+                  {item.label}
                 </a>
               ))}
             </div>
@@ -86,8 +122,14 @@ export function SiteFooter() {
               <h4>{column.heading}</h4>
               <ul>
                 {column.links.map((link) => (
-                  <li key={link}>
-                    <a href="#">{link}</a>
+                  <li key={link.label}>
+                    {link.external ? (
+                      <a href={link.href} target="_blank" rel="noreferrer">
+                        {link.label}
+                      </a>
+                    ) : (
+                      <Link href={link.href}>{link.label}</Link>
+                    )}
                   </li>
                 ))}
               </ul>

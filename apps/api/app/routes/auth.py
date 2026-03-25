@@ -21,6 +21,11 @@ class SignupRequest(BaseModel):
 @router.get("/me")
 def me(user_id: str = Depends(require_user_id)):
     admin = get_supabase_admin_client()
+    if admin is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Supabase admin client is unavailable. Verify SUPABASE_URL/SUPABASE_SECRET_KEY and Python dependencies.",
+        )
 
     response = (
         admin.table("profiles")
@@ -41,6 +46,11 @@ def me(user_id: str = Depends(require_user_id)):
 @router.post("/signup")
 def signup(payload: SignupRequest):
     admin = get_supabase_admin_client()
+    if admin is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Supabase admin client is unavailable. Verify SUPABASE_URL/SUPABASE_SECRET_KEY and Python dependencies.",
+        )
 
     if len(payload.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")

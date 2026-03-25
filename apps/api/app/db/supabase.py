@@ -15,9 +15,15 @@ def get_supabase_client() -> "Client":
     if not settings.supabase_publishable_key:
         raise RuntimeError("SUPABASE_PUBLISHABLE_KEY is not set")
 
-    from supabase import create_client
+    try:
+        from supabase import create_client
+    except Exception as exc:
+        raise RuntimeError(f"Failed to import Supabase client dependency: {exc}") from exc
 
-    return create_client(settings.supabase_url, settings.supabase_publishable_key)
+    try:
+        return create_client(settings.supabase_url, settings.supabase_publishable_key)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to initialize Supabase client: {exc}") from exc
 
 
 def get_supabase_client_for_user(access_token: str) -> "Client":
@@ -28,8 +34,14 @@ def get_supabase_client_for_user(access_token: str) -> "Client":
     if not settings.supabase_publishable_key:
         raise RuntimeError("SUPABASE_PUBLISHABLE_KEY is not set")
 
-    from supabase import create_client
+    try:
+        from supabase import create_client
+    except Exception as exc:
+        raise RuntimeError(f"Failed to import Supabase client dependency: {exc}") from exc
 
-    client = create_client(settings.supabase_url, settings.supabase_publishable_key)
-    client.postgrest.auth(access_token)
-    return client
+    try:
+        client = create_client(settings.supabase_url, settings.supabase_publishable_key)
+        client.postgrest.auth(access_token)
+        return client
+    except Exception as exc:
+        raise RuntimeError(f"Failed to initialize user-scoped Supabase client: {exc}") from exc
