@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { CopyLinkButton } from "@/components/copy-link-button";
+import { ShareButtons } from "@/components/share-buttons";
 import { ArtistFollowButton } from "@/components/artist-follow-button";
 import { FavoriteEventButton } from "@/components/favorite-event-button";
 import { getEventArtists, getEventDetail, type EventArtist, type EventDetailResponse } from "@/lib/api";
@@ -133,8 +134,8 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
                 </Button>
               )}
 
-              {/* New: share / copy link */}
               <CopyLinkButton />
+              <ShareButtons title={event.title} />
 
               <FavoriteEventButton eventId={event.id} />
 

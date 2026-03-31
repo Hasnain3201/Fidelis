@@ -700,19 +700,31 @@ export function SearchResultsClient() {
             ))}
           </div>
         ) : !zipCode.trim() ? (
-          <div className="emptyStateCard" style={{ marginTop: 16 }}>
-            <h3>Enter a ZIP code to see events.</h3>
-            <p className="meta">We will show nearby events once you provide a ZIP.</p>
+          <div className="emptyStateCard" style={{ marginTop: 16, textAlign: "center", padding: "36px 24px" }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>📍</div>
+            <h3 style={{ margin: "0 0 8px" }}>Enter a ZIP code to find events</h3>
+            <p className="meta" style={{ margin: 0 }}>
+              Type your ZIP code in the search bar above and we will show live events near you.
+            </p>
           </div>
         ) : !isValidZipCode(zipCode) ? (
-          <div className="emptyStateCard" style={{ marginTop: 16 }}>
-            <h3>That ZIP code does not look right.</h3>
-            <p className="meta">Use ZIP format 12345 or 12345-6789.</p>
+          <div className="emptyStateCard" style={{ marginTop: 16, textAlign: "center", padding: "36px 24px" }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+            <h3 style={{ margin: "0 0 8px" }}>That ZIP code does not look right</h3>
+            <p className="meta" style={{ margin: 0 }}>
+              Use a valid US ZIP format like <strong>78701</strong> or <strong>78701-1234</strong>.
+            </p>
           </div>
         ) : totalResults === 0 ? (
-          <div className="emptyStateCard" style={{ marginTop: 16 }}>
-            <h3>No events matched these filters.</h3>
-            <p className="meta">Try widening the date range, removing event types, or searching a nearby ZIP.</p>
+          <div className="emptyStateCard" style={{ marginTop: 16, textAlign: "center", padding: "36px 24px" }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>🎵</div>
+            <h3 style={{ margin: "0 0 8px" }}>No events matched your search</h3>
+            <p className="meta" style={{ margin: "0 0 16px" }}>
+              Try widening the date range, removing filters, or searching a nearby ZIP code.
+            </p>
+            <div className="pageActions" style={{ justifyContent: "center", margin: 0 }}>
+              <a href="/search" className="pageActionLink secondary">Clear Filters</a>
+            </div>
           </div>
         ) : (
           <>
