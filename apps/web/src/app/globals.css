@@ -1,3 +1,29 @@
+.shelfPager {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.shelfPagerBtn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #d5dced;
+  background: #fff;
+  color: #47506a;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.shelfPagerBtn:hover:not(:disabled) {
+  background: #f4f7ff;
+}
+
+.shelfPagerBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .recentlyViewedClose {
   margin-left: auto;
   width: 18px;

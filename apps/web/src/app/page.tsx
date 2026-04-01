@@ -1,28 +1,19 @@
 "use client";
 
 import Image from "next/image";
-import { type FormEvent, useEffect, useMemo, useState, useTransition } from "react";
+import { type FormEvent, type MouseEvent, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import {
-  ArtistCard,
-  type ArtistCardItem,
-  EventShowcaseCard,
-  type EventCardItem,
-  VenueCard,
-  type VenueCardItem,
-} from "@/components/showcase-cards";
+import { ArtistCard, EventShowcaseCard, type EventCardItem, VenueCard, type VenueCardItem } from "@/components/showcase-cards";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  listArtists,
+  getTrendingContent,
   listVenues,
   searchEvents,
   searchEventsWithFilters,
-  getTrendingContent,
-  type ArtistSummary,
   type EventSummary,
-  type VenueSummary,
   type TrendingContentItem,
+  type VenueSummary,
 } from "@/lib/api";
 import { isValidZipCode, normalizeZipInput, zipMatchesEvent } from "@/lib/zip";
 import { FilterBar } from "@/components/filter-bar";
@@ -35,6 +26,7 @@ import {
 
 const QUICK_FILTERS = ["This Weekend", "Free Events", "Live Music", "Comedy Shows", "DJ Sets"];
 const DEFAULT_DISCOVERY_ZIP = "10001";
+const CARDS_PER_PAGE = 5;
 
 const EVENT_CARD_IMAGES = [
   "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=900&q=80",
@@ -57,6 +49,8 @@ const VENUE_CARD_IMAGES = [
   "https://images.unsplash.com/photo-1497032205916-ac775f0649ae?auto=format&fit=crop&w=900&q=80",
   "https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?auto=format&fit=crop&w=900&q=80",
 ];
+
+type ShelfKey = "recent" | "trending" | "near" | "cities";
 
 function toTitleCase(value: string): string {
   return value
@@ -118,19 +112,6 @@ function mapEventToCard(item: EventSummary, index: number): EventCardItem {
   };
 }
 
-function mapArtistToCard(artist: ArtistSummary): ArtistCardItem {
-  const genreLabel = artist.genre?.trim() || "Genre TBD";
-  return {
-    id: artist.id,
-    name: artist.stage_name,
-    location: genreLabel,
-    description: artist.bio?.trim() || "Artist profile details are available on linked event pages.",
-    image: pickImage(artist.id, ARTIST_CARD_IMAGES),
-    tags: [genreLabel],
-    badge: "Trending",
-  };
-}
-
 function mapVenueToCard(venue: VenueSummary): VenueCardItem {
   const cityState = [venue.city, venue.state].filter(Boolean).join(", ");
   const location = cityState || venue.zip_code;
@@ -147,13 +128,28 @@ function mapVenueToCard(venue: VenueSummary): VenueCardItem {
 }
 
 const withEventBadge = (items: EventCardItem[], badge: string) => items.map((item) => ({ ...item, badge }));
-const withArtistBadge = (items: ArtistCardItem[], badge: string) => items.map((item) => ({ ...item, badge }));
 const withVenueBadge = (items: VenueCardItem[], badge: string) => items.map((item) => ({ ...item, badge }));
 
+function pageItems<T>(items: T[], page: number): T[] {
+  const start = page * CARDS_PER_PAGE;
+  return items.slice(start, start + CARDS_PER_PAGE);
+}
+
+function maxPage(total: number): number {
+  return Math.max(0, Math.ceil(total / CARDS_PER_PAGE) - 1);
+}
+
 export default function HomePage() {
-  const [recentlyViewed, setRecentlyViewed] = useState<RecentlyViewedEntry[]>([]);
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+
+  const [recentlyViewed, setRecentlyViewed] = useState<RecentlyViewedEntry[]>([]);
+  const [shelfPage, setShelfPage] = useState<Record<ShelfKey, number>>({
+    recent: 0,
+    trending: 0,
+    near: 0,
+    cities: 0,
+  });
 
   const [searchText, setSearchText] = useState("");
   const [zipCode, setZipCode] = useState("");
@@ -161,12 +157,18 @@ export default function HomePage() {
   const [activeQuick, setActiveQuick] = useState(QUICK_FILTERS[0]);
 
   const [eventItems, setEventItems] = useState<EventCardItem[]>([]);
-  const [artistItems, setArtistItems] = useState<ArtistCardItem[]>([]);
   const [venueItems, setVenueItems] = useState<VenueCardItem[]>([]);
-  const [cardsMessage, setCardsMessage] = useState("");
-  
   const [promotedItems, setPromotedItems] = useState<EventCardItem[]>([]);
   const [trendingItems, setTrendingItems] = useState<TrendingContentItem[]>([]);
+  const [cardsMessage, setCardsMessage] = useState("");
+
+  function prevPage(key: ShelfKey) {
+    setShelfPage((p) => ({ ...p, [key]: Math.max(0, p[key] - 1) }));
+  }
+
+  function nextPage(key: ShelfKey, lastPage: number) {
+    setShelfPage((p) => ({ ...p, [key]: Math.min(lastPage, p[key] + 1) }));
+  }
 
   useEffect(() => {
     const load = () => setRecentlyViewed(readRecentlyViewed().slice(0, 10));
@@ -180,12 +182,11 @@ export default function HomePage() {
     let cancelled = false;
 
     async function loadShelves() {
-      const [eventsResult, artistsResult, venuesResult, promotedResult, trendingResult] = await Promise.allSettled([
+      const [eventsResult, venuesResult, promotedResult, trendingResult] = await Promise.allSettled([
         searchEvents(DEFAULT_DISCOVERY_ZIP),
-        listArtists({ limit: 30 }),
         listVenues({ limit: 30 }),
         searchEventsWithFilters({ isPromoted: true, limit: 24 }),
-        getTrendingContent(10),
+        getTrendingContent(20),
       ]);
 
       if (cancelled) return;
@@ -194,12 +195,6 @@ export default function HomePage() {
         setEventItems(eventsResult.value.items.map(mapEventToCard));
       } else {
         setEventItems([]);
-      }
-
-      if (artistsResult.status === "fulfilled") {
-        setArtistItems(artistsResult.value.map(mapArtistToCard));
-      } else {
-        setArtistItems([]);
       }
 
       if (venuesResult.status === "fulfilled") {
@@ -214,13 +209,17 @@ export default function HomePage() {
         setPromotedItems([]);
       }
 
-      if (trendingResult.status === "fulfilled") setTrendingItems(trendingResult.value);
-      else setTrendingItems([]);
+      if (trendingResult.status === "fulfilled") {
+        setTrendingItems(trendingResult.value);
+      } else {
+        setTrendingItems([]);
+      }
 
       if (
         eventsResult.status === "rejected" &&
-        artistsResult.status === "rejected" &&
-        venuesResult.status === "rejected"
+        venuesResult.status === "rejected" &&
+        promotedResult.status === "rejected" &&
+        trendingResult.status === "rejected"
       ) {
         setCardsMessage("Live content shelves are unavailable right now.");
       } else {
@@ -251,12 +250,10 @@ export default function HomePage() {
     });
   }, [activeQuick, eventItems, searchText, zipCode]);
 
-  const promoted = useMemo(() => promotedItems.slice(0, 3), [promotedItems]);
-
-  const trendingSearches = useMemo(
-    () => withArtistBadge(artistItems.slice(0, 5), "Trending"),
-    [artistItems],
-  );
+  const promoted = useMemo(() => {
+    const source = promotedItems.length > 0 ? promotedItems : eventItems.filter((item) => item.badge === "Promoted");
+    return source.slice(0, 3);
+  }, [promotedItems, eventItems]);
 
   const popularNearYou = useMemo(() => {
     const nearSorted = [...visibleEvents].sort((a, b) => {
@@ -264,13 +261,32 @@ export default function HomePage() {
       const bNear = zipCode.trim() && zipMatchesEvent(zipCode, b.zipCode) ? 1 : 0;
       return bNear - aNear;
     });
-    return withEventBadge(nearSorted.slice(0, 5), "Popular");
+    return withEventBadge(nearSorted, "Popular");
   }, [visibleEvents, zipCode]);
 
   const popularCities = useMemo(() => {
     const citySorted = [...venueItems].sort((a, b) => a.location.localeCompare(b.location));
-    return withVenueBadge(citySorted.slice(0, 5), "City Pick");
+    return withVenueBadge(citySorted, "City Pick");
   }, [venueItems]);
+
+  const recentLastPage = maxPage(recentlyViewed.length);
+  const trendingLastPage = maxPage(trendingItems.length);
+  const nearLastPage = maxPage(popularNearYou.length);
+  const citiesLastPage = maxPage(popularCities.length);
+
+  const recentPageItems = pageItems(recentlyViewed, shelfPage.recent);
+  const trendingPageItems = pageItems(trendingItems, shelfPage.trending);
+  const nearPageItems = pageItems(popularNearYou, shelfPage.near);
+  const citiesPageItems = pageItems(popularCities, shelfPage.cities);
+
+  useEffect(() => {
+    setShelfPage((p) => ({
+      recent: Math.min(p.recent, recentLastPage),
+      trending: Math.min(p.trending, trendingLastPage),
+      near: Math.min(p.near, nearLastPage),
+      cities: Math.min(p.cities, citiesLastPage),
+    }));
+  }, [recentLastPage, trendingLastPage, nearLastPage, citiesLastPage]);
 
   const featuredRailItems = useMemo(() => {
     const source = promoted.length > 0 ? [...promoted, ...popularNearYou, ...visibleEvents] : eventItems;
@@ -310,17 +326,16 @@ export default function HomePage() {
   }
 
   function handleRemoveRecentlyViewed(
-    event: React.MouseEvent<HTMLButtonElement>,
+    event: MouseEvent<HTMLButtonElement>,
     kind: RecentlyViewedKind,
     id: string,
   ) {
     event.preventDefault();
     event.stopPropagation();
-  
+
     const next = removeRecentlyViewed(kind, id);
     setRecentlyViewed(next.slice(0, 10));
   }
-
 
   return (
     <>
@@ -352,9 +367,7 @@ export default function HomePage() {
                 onChange={(event) => {
                   const nextZip = normalizeZipInput(event.target.value);
                   setZipCode(nextZip);
-                  if (zipError) {
-                    setZipError(validateZipInput(nextZip));
-                  }
+                  if (zipError) setZipError(validateZipInput(nextZip));
                 }}
                 onBlur={() => setZipError(validateZipInput(zipCode))}
                 placeholder="ZIP code"
@@ -404,9 +417,29 @@ export default function HomePage() {
                 <div className="shelfWrap">
                   <div className="shelfHeading">
                     <h2 className="shelfTitle">Recently Viewed</h2>
+                    <div className="shelfPager">
+                      <button
+                        type="button"
+                        className="shelfPagerBtn"
+                        onClick={() => prevPage("recent")}
+                        disabled={shelfPage.recent === 0}
+                        aria-label="Previous recently viewed page"
+                      >
+                        ←
+                      </button>
+                      <button
+                        type="button"
+                        className="shelfPagerBtn"
+                        onClick={() => nextPage("recent", recentLastPage)}
+                        disabled={shelfPage.recent >= recentLastPage}
+                        aria-label="Next recently viewed page"
+                      >
+                        →
+                      </button>
+                    </div>
                   </div>
                   <div className="recentlyViewedList">
-                    {recentlyViewed.map((item) => (
+                    {recentPageItems.map((item) => (
                       <a key={`${item.kind}-${item.id}`} href={item.href} className="recentlyViewedChip">
                         <Image
                           src={item.image}
@@ -444,9 +477,29 @@ export default function HomePage() {
               <div className="shelfWrap">
                 <div className="shelfHeading">
                   <h2 className="shelfTitle">Trending</h2>
+                  <div className="shelfPager">
+                    <button
+                      type="button"
+                      className="shelfPagerBtn"
+                      onClick={() => prevPage("trending")}
+                      disabled={shelfPage.trending === 0}
+                      aria-label="Previous trending page"
+                    >
+                      ←
+                    </button>
+                    <button
+                      type="button"
+                      className="shelfPagerBtn"
+                      onClick={() => nextPage("trending", trendingLastPage)}
+                      disabled={shelfPage.trending >= trendingLastPage}
+                      aria-label="Next trending page"
+                    >
+                      →
+                    </button>
+                  </div>
                 </div>
                 <div className="cardsGrid five">
-                  {trendingItems.slice(0, 5).map((item, index) =>
+                  {trendingPageItems.map((item, index) =>
                     item.item_type === "event" ? (
                       <EventShowcaseCard
                         key={`trending-event-${item.item_id}`}
@@ -474,7 +527,7 @@ export default function HomePage() {
                           name: item.label,
                           location: item.category ?? "Artist",
                           description: `${item.popularity_count} follows`,
-                          image: ARTIST_CARD_IMAGES[index % ARTIST_CARD_IMAGES.length],
+                          image: pickImage(item.item_id, ARTIST_CARD_IMAGES),
                           tags: [item.category ?? "Trending"],
                           badge: "Trending",
                         }}
@@ -487,9 +540,29 @@ export default function HomePage() {
               <div className="shelfWrap">
                 <div className="shelfHeading">
                   <h2 className="shelfTitle">Popular Near You</h2>
+                  <div className="shelfPager">
+                    <button
+                      type="button"
+                      className="shelfPagerBtn"
+                      onClick={() => prevPage("near")}
+                      disabled={shelfPage.near === 0}
+                      aria-label="Previous popular near you page"
+                    >
+                      ←
+                    </button>
+                    <button
+                      type="button"
+                      className="shelfPagerBtn"
+                      onClick={() => nextPage("near", nearLastPage)}
+                      disabled={shelfPage.near >= nearLastPage}
+                      aria-label="Next popular near you page"
+                    >
+                      →
+                    </button>
+                  </div>
                 </div>
                 <div className="cardsGrid five">
-                  {popularNearYou.map((item) => (
+                  {nearPageItems.map((item) => (
                     <EventShowcaseCard key={`near-${item.id}`} item={item} />
                   ))}
                 </div>
@@ -498,9 +571,29 @@ export default function HomePage() {
               <div className="shelfWrap">
                 <div className="shelfHeading">
                   <h2 className="shelfTitle">Popular Cities</h2>
+                  <div className="shelfPager">
+                    <button
+                      type="button"
+                      className="shelfPagerBtn"
+                      onClick={() => prevPage("cities")}
+                      disabled={shelfPage.cities === 0}
+                      aria-label="Previous popular cities page"
+                    >
+                      ←
+                    </button>
+                    <button
+                      type="button"
+                      className="shelfPagerBtn"
+                      onClick={() => nextPage("cities", citiesLastPage)}
+                      disabled={shelfPage.cities >= citiesLastPage}
+                      aria-label="Next popular cities page"
+                    >
+                      →
+                    </button>
+                  </div>
                 </div>
                 <div className="cardsGrid five">
-                  {popularCities.map((item) => (
+                  {citiesPageItems.map((item) => (
                     <VenueCard key={`city-${item.id}`} item={item} />
                   ))}
                 </div>
@@ -509,7 +602,6 @@ export default function HomePage() {
 
             <aside className="featuredRail" aria-label="Featured events">
               <p className="featuredRailKicker">Featured Events</p>
-
               <div className="featuredRailList">
                 {featuredRailItems.map((item) => (
                   <a key={`rail-${item.id}`} href={`/events/${item.id}`} className="featuredRailItem">
