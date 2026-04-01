@@ -18,9 +18,11 @@ import {
   listVenues,
   searchEvents,
   searchEventsWithFilters,
+  getTrendingContent,
   type ArtistSummary,
   type EventSummary,
   type VenueSummary,
+  type TrendingContentItem,
 } from "@/lib/api";
 import { isValidZipCode, normalizeZipInput, zipMatchesEvent } from "@/lib/zip";
 import { FilterBar } from "@/components/filter-bar";
@@ -162,7 +164,9 @@ export default function HomePage() {
   const [artistItems, setArtistItems] = useState<ArtistCardItem[]>([]);
   const [venueItems, setVenueItems] = useState<VenueCardItem[]>([]);
   const [cardsMessage, setCardsMessage] = useState("");
+  
   const [promotedItems, setPromotedItems] = useState<EventCardItem[]>([]);
+  const [trendingItems, setTrendingItems] = useState<TrendingContentItem[]>([]);
 
   useEffect(() => {
     const load = () => setRecentlyViewed(readRecentlyViewed().slice(0, 10));
@@ -176,13 +180,13 @@ export default function HomePage() {
     let cancelled = false;
 
     async function loadShelves() {
-      const [eventsResult, artistsResult, venuesResult, promotedResult] = await Promise.allSettled([
+      const [eventsResult, artistsResult, venuesResult, promotedResult, trendingResult] = await Promise.allSettled([
         searchEvents(DEFAULT_DISCOVERY_ZIP),
         listArtists({ limit: 30 }),
         listVenues({ limit: 30 }),
-        searchEventsWithFilters({ isPromoted: true, limit: 24 }), // no zip
+        searchEventsWithFilters({ isPromoted: true, limit: 24 }),
+        getTrendingContent(10),
       ]);
-
 
       if (cancelled) return;
 
@@ -209,6 +213,9 @@ export default function HomePage() {
       } else {
         setPromotedItems([]);
       }
+
+      if (trendingResult.status === "fulfilled") setTrendingItems(trendingResult.value);
+      else setTrendingItems([]);
 
       if (
         eventsResult.status === "rejected" &&
@@ -436,12 +443,44 @@ export default function HomePage() {
 
               <div className="shelfWrap">
                 <div className="shelfHeading">
-                  <h2 className="shelfTitle">Trending Searches</h2>
+                  <h2 className="shelfTitle">Trending</h2>
                 </div>
                 <div className="cardsGrid five">
-                  {trendingSearches.map((item) => (
-                    <ArtistCard key={`trend-${item.id}`} item={item} />
-                  ))}
+                  {trendingItems.slice(0, 5).map((item, index) =>
+                    item.item_type === "event" ? (
+                      <EventShowcaseCard
+                        key={`trending-event-${item.item_id}`}
+                        item={{
+                          id: item.item_id,
+                          title: item.label,
+                          subtitle: item.category ?? "Event",
+                          description: `${item.venue_name ?? "Venue TBD"} • ${item.popularity_count} favorites`,
+                          dateLabel: item.start_time ? formatDateLabel(item.start_time) : "TBD",
+                          timeLabel: item.start_time ? formatTimeLabel(item.start_time) : "TBD",
+                          zipCode: item.zip_code ?? "00000",
+                          location: item.zip_code ?? "N/A",
+                          venue: item.venue_name ?? "Unknown Venue",
+                          price: "TBD",
+                          image: EVENT_CARD_IMAGES[index % EVENT_CARD_IMAGES.length],
+                          tags: [item.category ?? "Trending"],
+                          badge: "Trending",
+                        }}
+                      />
+                    ) : (
+                      <ArtistCard
+                        key={`trending-artist-${item.item_id}`}
+                        item={{
+                          id: item.item_id,
+                          name: item.label,
+                          location: item.category ?? "Artist",
+                          description: `${item.popularity_count} follows`,
+                          image: ARTIST_CARD_IMAGES[index % ARTIST_CARD_IMAGES.length],
+                          tags: [item.category ?? "Trending"],
+                          badge: "Trending",
+                        }}
+                      />
+                    ),
+                  )}
                 </div>
               </div>
 

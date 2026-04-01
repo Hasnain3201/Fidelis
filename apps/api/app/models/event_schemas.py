@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -54,3 +54,13 @@ class EventCreate(BaseModel):
 class EventCreated(BaseModel):
     id: str
     status: str
+
+class TrendingContentItem(BaseModel):
+    item_type: Literal["event", "artist"]
+    item_id: str
+    label: str
+    start_time: Optional[datetime] = None
+    category: Optional[str] = None
+    zip_code: Optional[str] = None
+    venue_name: Optional[str] = None
+    popularity_count: int

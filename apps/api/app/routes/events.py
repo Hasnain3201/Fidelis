@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query, HTTPException, Depends, status
 
 from app.db.supabase import get_supabase_client
-from app.models.event_schemas import EventSummary, EventSearchResponse, EventDetail
+from app.models.event_schemas import EventSummary, EventSearchResponse, EventDetail, TrendingContentItem
 
 from app.core.auth import require_user_id
 
@@ -326,6 +326,27 @@ async def get_recommended_events(user_id: UUID = Depends(require_user_id)):
     ]
 
     return items
+
+@router.get("/trending/content", response_model=list[TrendingContentItem])
+async def get_trending_content(limit: int = Query(10, ge=1, le=50)):
+    client = _get_supabase_client_or_503()
+
+    response = client.rpc("get_popular_content", {"limit_count": limit}).execute()
+    rows = response.data or []
+
+    return [
+        TrendingContentItem(
+            item_type=row["item_type"],
+            item_id=row["item_id"],
+            label=row["label"],
+            start_time=row.get("start_time"),
+            category=row.get("category"),
+            zip_code=row.get("zip_code"),
+            venue_name=row.get("venue_name"),
+            popularity_count=row.get("popularity_count", 0),
+        )
+        for row in rows
+    ]
 
 @router.get("/trending", response_model=list[EventSummary])
 async def get_trending_events():

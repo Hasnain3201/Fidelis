@@ -62,6 +62,17 @@ export type ArtistSummary = {
   media_url?: string | null;
 };
 
+export type TrendingContentItem = {
+  item_type: "event" | "artist";
+  item_id: string;
+  label: string;
+  start_time?: string | null;
+  category?: string | null;
+  zip_code?: string | null;
+  venue_name?: string | null;
+  popularity_count: number;
+};
+
 export type VenueSummary = {
   id: string;
   name: string;
@@ -288,6 +299,22 @@ export async function listArtists(params?: { query?: string; genre?: string; lim
   }
   if (!response.ok) throw new Error(await parseErrorMessage(response));
   return (await response.json()) as ArtistSummary[];
+}
+
+export async function getTrendingContent(limit = 10): Promise<TrendingContentItem[]> {
+  const url = new URL("/api/v1/events/trending/content", API_BASE);
+  url.searchParams.set("limit", String(limit));
+ 
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(url.toString(), { cache: "no-store" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Network request failed.";
+    throw new Error(`${message} Confirm the API is running at ${API_BASE}.`);
+  }
+ 
+  if (!response.ok) throw new Error(await parseErrorMessage(response));
+  return (await response.json()) as TrendingContentItem[];
 }
 
 export async function listVenues(params?: {
