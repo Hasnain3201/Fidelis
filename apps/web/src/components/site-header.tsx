@@ -17,7 +17,10 @@ function getDashboardHref(session: AuthSession): string {
   return "/dashboard";
 }
 
-const ADMIN_NAV_ITEMS = [{ href: "/admin/scraper", label: "Scraper" }];
+const ADMIN_NAV_ITEMS = [
+  { href: "/admin/scraper", label: "Scraper" },
+  { href: "/admin/external-events", label: "External APIs" },
+];
 
 export function SiteHeader() {
   const pathname = usePathname();

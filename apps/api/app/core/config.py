@@ -28,6 +28,31 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "llama-3.1-8b-instant"
 
+    # External event APIs (admin preview; keys are server-side only)
+    ticketmaster_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "TICKETMASTER_API_KEY",
+            "TICKETMASTER_CONSUMER_KEY",
+        ),
+    )
+    eventbrite_api_token: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "EVENTBRITE_API_TOKEN",
+            "EVENTBRITE_API_KEY",
+            "EVENTBRITE_TOKEN",
+        ),
+    )
+    # Optional: list events for your org (search-by-ZIP is often unavailable for third parties).
+    eventbrite_organization_id: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "EVENTBRITE_ORGANIZATION_ID",
+            "EVENTBRITE_ORG_ID",
+        ),
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,
