@@ -17,6 +17,7 @@ import {
   listArtists,
   listVenues,
   searchEvents,
+  searchEventsWithFilters,
   type ArtistSummary,
   type EventSummary,
   type VenueSummary,
@@ -111,6 +112,7 @@ function mapEventToCard(item: EventSummary, index: number): EventCardItem {
     price: "TBD",
     image: EVENT_CARD_IMAGES[index % EVENT_CARD_IMAGES.length],
     tags: [categoryLabel],
+    badge: item.is_promoted ? "Promoted" : undefined,
   };
 }
 
@@ -160,6 +162,7 @@ export default function HomePage() {
   const [artistItems, setArtistItems] = useState<ArtistCardItem[]>([]);
   const [venueItems, setVenueItems] = useState<VenueCardItem[]>([]);
   const [cardsMessage, setCardsMessage] = useState("");
+  const [promotedItems, setPromotedItems] = useState<EventCardItem[]>([]);
 
   useEffect(() => {
     const load = () => setRecentlyViewed(readRecentlyViewed().slice(0, 10));
@@ -173,11 +176,13 @@ export default function HomePage() {
     let cancelled = false;
 
     async function loadShelves() {
-      const [eventsResult, artistsResult, venuesResult] = await Promise.allSettled([
+      const [eventsResult, artistsResult, venuesResult, promotedResult] = await Promise.allSettled([
         searchEvents(DEFAULT_DISCOVERY_ZIP),
         listArtists({ limit: 30 }),
         listVenues({ limit: 30 }),
+        searchEventsWithFilters({ isPromoted: true, limit: 24 }), // no zip
       ]);
+
 
       if (cancelled) return;
 
@@ -197,6 +202,12 @@ export default function HomePage() {
         setVenueItems(venuesResult.value.map(mapVenueToCard));
       } else {
         setVenueItems([]);
+      }
+
+      if (promotedResult.status === "fulfilled") {
+        setPromotedItems(promotedResult.value.items.map(mapEventToCard));
+      } else {
+        setPromotedItems([]);
       }
 
       if (
@@ -233,7 +244,7 @@ export default function HomePage() {
     });
   }, [activeQuick, eventItems, searchText, zipCode]);
 
-  const promoted = useMemo(() => withEventBadge(visibleEvents.slice(0, 3), "Promoted"), [visibleEvents]);
+  const promoted = useMemo(() => promotedItems.slice(0, 3), [promotedItems]);
 
   const trendingSearches = useMemo(
     () => withArtistBadge(artistItems.slice(0, 5), "Trending"),

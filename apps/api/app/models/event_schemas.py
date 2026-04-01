@@ -14,7 +14,7 @@ class EventSummary(BaseModel):
     start_time: datetime
     category: str
     zip_code: str = Field(pattern=r"^\d{5}$")
-
+    is_promoted: bool = False
 
 class EventSearchResponse(BaseModel):
     items: list[EventSummary]

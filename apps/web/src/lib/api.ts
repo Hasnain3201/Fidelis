@@ -8,6 +8,7 @@ export type EventSummary = {
   start_time: string;
   category: string;
   zip_code: string;
+  is_promoted: boolean;
 };
 
 export type EventSearchResponse = {
@@ -20,7 +21,7 @@ export type EventSearchResponse = {
 export type EventSearchSort = "recommended" | "dateSoonest" | "dateLatest";
 
 export type EventSearchParams = {
-  zip: string;
+  zip?: string;
   categories?: string[];
   query?: string;
   venue?: string;
@@ -31,6 +32,7 @@ export type EventSearchParams = {
   startBefore?: string;
   page?: number;
   limit?: number;
+  isPromoted?: boolean;
 };
 
 export type EventDetailResponse = {
@@ -228,45 +230,25 @@ export async function searchEvents(zip: string): Promise<EventSearchResponse> {
 
 export async function searchEventsWithFilters(params: EventSearchParams): Promise<EventSearchResponse> {
   const url = new URL("/api/v1/events/search", API_BASE);
-  url.searchParams.set("zip_code", params.zip);
 
-  if (params.query?.trim()) {
-    url.searchParams.set("query", params.query.trim());
+  const zip = params.zip?.trim();
+  if (zip) {
+    url.searchParams.set("zip_code", zip);
   }
 
-  if (params.venue?.trim()) {
-    url.searchParams.set("venue", params.venue.trim());
-  }
-
-  if (params.city?.trim()) {
-    url.searchParams.set("city", params.city.trim());
-  }
-
-  if (params.state?.trim()) {
-    url.searchParams.set("state", params.state.trim());
-  }
+  if (params.query?.trim()) url.searchParams.set("query", params.query.trim());
+  if (params.venue?.trim()) url.searchParams.set("venue", params.venue.trim());
+  if (params.city?.trim()) url.searchParams.set("city", params.city.trim());
+  if (params.state?.trim()) url.searchParams.set("state", params.state.trim());
 
   for (const category of params.categories ?? []) {
-    if (category.trim()) {
-      url.searchParams.append("categories", category.trim());
-    }
+    if (category.trim()) url.searchParams.append("categories", category.trim());
   }
 
-  if (params.startAfter) {
-    url.searchParams.set("start_after", params.startAfter);
-  }
-
-  if (params.startBefore) {
-    url.searchParams.set("start_before", params.startBefore);
-  }
-
-  if (params.page && params.page > 1) {
-    url.searchParams.set("page", String(params.page));
-  }
-
-  if (params.limit) {
-    url.searchParams.set("limit", String(params.limit));
-  }
+  if (params.startAfter) url.searchParams.set("start_after", params.startAfter);
+  if (params.startBefore) url.searchParams.set("start_before", params.startBefore);
+  if (params.page && params.page > 1) url.searchParams.set("page", String(params.page));
+  if (params.limit) url.searchParams.set("limit", String(params.limit));
 
   let response: Response;
   try {
@@ -276,16 +258,10 @@ export async function searchEventsWithFilters(params: EventSearchParams): Promis
     throw new Error(`${message} Confirm the API is running at ${API_BASE}.`);
   }
 
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
-  }
+  if (!response.ok) throw new Error(await parseErrorMessage(response));
 
   const payload = (await response.json()) as EventSearchResponse;
-
-  if (params.sort) {
-    payload.items = sortEventItems(payload.items, params.sort);
-  }
-
+  if (params.sort) payload.items = sortEventItems(payload.items, params.sort);
   return payload;
 }
 
