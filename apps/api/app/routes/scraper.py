@@ -38,6 +38,8 @@ class ScrapeResult(BaseModel):
     venue_id: str | None = None
     action: str | None = None
     data: dict | None = None
+    # Raw page snapshot (text, contacts, meta, JSON-LD) for admin content preview.
+    content_preview: dict | None = None
 
 
 class ScrapeEventsResult(BaseModel):
@@ -48,11 +50,37 @@ class ScrapeEventsResult(BaseModel):
     updated: int = 0
     skipped: int = 0
     event_ids: list[str] = []
+    content_preview: dict | None = None
+
+
+class ScrapePreviewResponse(BaseModel):
+    success: bool
+    content_preview: dict
+    detail: str | None = None
 
 
 # ---------------------------------------------------------------------------
 # Scrape endpoints
 # ---------------------------------------------------------------------------
+
+@router.post("/scrape/preview", response_model=ScrapePreviewResponse)
+def scrape_content_preview_only(
+    body: ScrapeVenueRequest,
+    auth: AuthContext = _admin,
+) -> ScrapePreviewResponse:
+    """Fetch and parse URL only (no AI, no DB). Same raw fields as scraper-old Content Preview step."""
+    from app.services.scraper import ScraperService
+    from app.services.scraper.utils import build_content_preview
+
+    url = str(body.url)
+    scraper = ScraperService()
+    raw = scraper.extract_venue_data(url, enable_render=body.enable_render)
+    if "error" in raw:
+        raise HTTPException(status_code=502, detail=raw["error"])
+
+    preview = build_content_preview(raw)
+    return ScrapePreviewResponse(success=True, content_preview=preview)
+
 
 @router.post("/scrape/venues", response_model=ScrapeResult)
 def scrape_venue(
@@ -62,7 +90,7 @@ def scrape_venue(
 ) -> ScrapeResult:
     """Scrape a venue URL, extract structured data via AI, and save to Supabase."""
     from app.services.scraper import ScraperService, AIService
-    from app.services.scraper.utils import map_venue_to_supabase
+    from app.services.scraper.utils import build_content_preview, map_venue_to_supabase
     from app.repositories.venues import VenueRepository
     from app.repositories.notifications import NotificationRepository
 
@@ -72,6 +100,8 @@ def scrape_venue(
     raw = scraper.extract_venue_data(url, enable_render=body.enable_render)
     if "error" in raw:
         raise HTTPException(status_code=502, detail=raw["error"])
+
+    content_preview = build_content_preview(raw)
 
     ai = AIService()
     structured = ai.process_venue_data(raw)
@@ -84,7 +114,12 @@ def scrape_venue(
     if dry_run:
         payload = map_venue_to_supabase(structured, url)
         logger.info("SCRAPER_DRY_RUN venue payload: %s", payload)
-        return ScrapeResult(success=True, detail="dry_run=true (no Supabase writes)", data=payload)
+        return ScrapeResult(
+            success=True,
+            detail="dry_run=true (no Supabase writes)",
+            data=payload,
+            content_preview=content_preview,
+        )
 
     repo = VenueRepository()
     result = repo.save_venue(structured, url)
@@ -105,6 +140,7 @@ def scrape_venue(
         venue_id=result["venue_id"],
         action=result["action"],
         data=structured,
+        content_preview=content_preview,
     )
 
 
@@ -116,7 +152,11 @@ def scrape_events(
 ) -> ScrapeEventsResult:
     """Scrape an events-listing URL, extract via AI, and save to Supabase."""
     from app.services.scraper import ScraperService, AIService
-    from app.services.scraper.utils import map_event_to_supabase, map_venue_to_supabase
+    from app.services.scraper.utils import (
+        build_content_preview,
+        map_event_to_supabase,
+        map_venue_to_supabase,
+    )
     from app.repositories.venues import VenueRepository
     from app.repositories.events import EventRepository
     from app.repositories.notifications import NotificationRepository
@@ -127,6 +167,8 @@ def scrape_events(
     raw = scraper.extract_venue_data(url, enable_render=body.enable_render)
     if "error" in raw:
         raise HTTPException(status_code=502, detail=raw["error"])
+
+    content_preview = build_content_preview(raw)
 
     ai = AIService()
     ai_result = ai.process_events_data(raw)
@@ -175,6 +217,7 @@ def scrape_events(
             updated=0,
             skipped=0,
             event_ids=[],
+            content_preview=content_preview,
         )
 
     event_repo = EventRepository()
@@ -199,6 +242,7 @@ def scrape_events(
         updated=summary["updated"],
         skipped=summary["skipped"],
         event_ids=summary["event_ids"],
+        content_preview=content_preview,
     )
 
 

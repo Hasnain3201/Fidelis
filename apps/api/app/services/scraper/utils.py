@@ -151,3 +151,96 @@ def map_event_to_supabase(
         "fingerprint": fingerprint,
         "confidence": conf,
     }
+
+
+# Max chars of text_content returned in API previews (full page text can be huge).
+_CONTENT_PREVIEW_TEXT_LIMIT = 400_000
+
+
+def _iter_str_list(values: Any) -> list[Any]:
+    if isinstance(values, (list, tuple)):
+        return list(values)
+    return []
+
+
+def _dedupe_emails_preserve_order(values: Any) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for v in _iter_str_list(values):
+        if not isinstance(v, str):
+            continue
+        s = v.strip()
+        if not s:
+            continue
+        key = s.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(s)
+    return out
+
+
+def _dedupe_phones_preserve_order(values: Any) -> list[str]:
+    """Drop duplicates; same digits => one entry (keeps first formatted string)."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for v in _iter_str_list(values):
+        if not isinstance(v, str):
+            continue
+        s = v.strip()
+        if not s:
+            continue
+        digits = re.sub(r"\D", "", s)
+        key = digits if digits else s.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(s)
+    return out
+
+
+def _preview_description(meta: dict[str, Any]) -> str:
+    for k in ("og:description", "description", "twitter:description"):
+        v = meta.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def build_content_preview(raw: dict[str, Any]) -> dict[str, Any]:
+    """
+    Serializable slice of ScraperService.extract_venue_data output for admin UI
+    (matches scraper-old displayPreview: text, contacts, meta, structured_data).
+    """
+    text = raw.get("text_content") or ""
+    if not isinstance(text, str):
+        text = str(text)
+    full_len = len(text)
+    truncated = full_len > _CONTENT_PREVIEW_TEXT_LIMIT
+    if truncated:
+        text = text[:_CONTENT_PREVIEW_TEXT_LIMIT]
+
+    structured = raw.get("structured_data")
+    if structured is None:
+        structured = []
+    micro = raw.get("microdata")
+    if micro is None:
+        micro = []
+
+    meta_dict = dict(raw.get("meta_data") or {})
+
+    return {
+        "url": raw.get("url"),
+        "title": raw.get("title") or "",
+        "domain": raw.get("domain") or "",
+        "description": _preview_description(meta_dict),
+        "phones": _dedupe_phones_preserve_order(raw.get("phones")),
+        "emails": _dedupe_emails_preserve_order(raw.get("emails")),
+        "meta_data": meta_dict,
+        "structured_data": structured,
+        "microdata": micro,
+        "render_used": bool(raw.get("render_used")),
+        "text_content": text,
+        "text_content_truncated": truncated,
+        "text_content_total_length": full_len,
+    }
