@@ -27,6 +27,7 @@ import {
 const QUICK_FILTERS = ["This Weekend", "Free Events", "Live Music", "Comedy Shows", "DJ Sets"];
 const DEFAULT_DISCOVERY_ZIP = "10001";
 const CARDS_PER_PAGE = 5;
+const MAX_ITEMS_PER_SHELF = 10;
 
 const EVENT_CARD_IMAGES = [
   "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=900&q=80",
@@ -171,7 +172,7 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    const load = () => setRecentlyViewed(readRecentlyViewed().slice(0, 10));
+    const load = () => setRecentlyViewed(readRecentlyViewed().slice(0, MAX_ITEMS_PER_SHELF));
     load();
 
     window.addEventListener("storage", load);
@@ -186,7 +187,7 @@ export default function HomePage() {
         searchEvents(DEFAULT_DISCOVERY_ZIP),
         listVenues({ limit: 30 }),
         searchEventsWithFilters({ isPromoted: true, limit: 24 }),
-        getTrendingContent(20),
+        getTrendingContent(MAX_ITEMS_PER_SHELF),
       ]);
 
       if (cancelled) return;
@@ -252,30 +253,30 @@ export default function HomePage() {
 
   const promoted = useMemo(() => {
     const source = promotedItems.length > 0 ? promotedItems : eventItems.filter((item) => item.badge === "Promoted");
-    return source.slice(0, 3);
+    return source.slice(0, Math.min(3, MAX_ITEMS_PER_SHELF));
   }, [promotedItems, eventItems]);
-
+  
   const popularNearYou = useMemo(() => {
     const nearSorted = [...visibleEvents].sort((a, b) => {
       const aNear = zipCode.trim() && zipMatchesEvent(zipCode, a.zipCode) ? 1 : 0;
       const bNear = zipCode.trim() && zipMatchesEvent(zipCode, b.zipCode) ? 1 : 0;
       return bNear - aNear;
     });
-    return withEventBadge(nearSorted, "Popular");
+    return withEventBadge(nearSorted.slice(0, MAX_ITEMS_PER_SHELF), "Popular");
   }, [visibleEvents, zipCode]);
-
+  
   const popularCities = useMemo(() => {
     const citySorted = [...venueItems].sort((a, b) => a.location.localeCompare(b.location));
-    return withVenueBadge(citySorted, "City Pick");
+    return withVenueBadge(citySorted.slice(0, MAX_ITEMS_PER_SHELF), "City Pick");
   }, [venueItems]);
 
   const recentLastPage = maxPage(recentlyViewed.length);
-  const trendingLastPage = maxPage(trendingItems.length);
+  const trendingLastPage = maxPage(Math.min(trendingItems.length, MAX_ITEMS_PER_SHELF));
   const nearLastPage = maxPage(popularNearYou.length);
   const citiesLastPage = maxPage(popularCities.length);
 
   const recentPageItems = pageItems(recentlyViewed, shelfPage.recent);
-  const trendingPageItems = pageItems(trendingItems, shelfPage.trending);
+  const trendingPageItems = pageItems(trendingItems.slice(0, MAX_ITEMS_PER_SHELF), shelfPage.trending);
   const nearPageItems = pageItems(popularNearYou, shelfPage.near);
   const citiesPageItems = pageItems(popularCities, shelfPage.cities);
 
@@ -334,7 +335,7 @@ export default function HomePage() {
     event.stopPropagation();
 
     const next = removeRecentlyViewed(kind, id);
-    setRecentlyViewed(next.slice(0, 10));
+    setRecentlyViewed(next.slice(0, MAX_ITEMS_PER_SHELF));
   }
 
   return (
