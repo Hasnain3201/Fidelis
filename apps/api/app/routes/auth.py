@@ -3,7 +3,6 @@ from pydantic import BaseModel, EmailStr
 
 from app.core.auth import require_user_id
 
-from app.db.supabase import get_supabase_client
 from app.db.supabase_admin import get_supabase_admin_client
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -88,9 +87,6 @@ def signup(payload: SignupRequest):
         }
 
         admin_client.table("profiles").upsert(insert_payload, on_conflict="id").execute()
-
-        if payload.role == "user":
-            admin_client.table("users").upsert({"id": user_id}, on_conflict="id").execute()
 
     except Exception as e:
         try:

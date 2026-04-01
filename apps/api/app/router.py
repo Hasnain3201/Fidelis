@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from app.core.auth import get_auth_context
-from app.routes import artists, claims, events, health, users, venues, auth
+from app.routes import artists, claims, events, health, scraper, users, venues, auth
 
 api_router = APIRouter()
 
@@ -24,4 +24,7 @@ api_router.include_router(
 )
 api_router.include_router(
     claims.router, prefix="/claims", tags=["claims"], dependencies=_auth_required,
+)
+api_router.include_router(
+    scraper.router, prefix="/scraper", tags=["scraper"], dependencies=_auth_required,
 )

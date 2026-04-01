@@ -234,7 +234,7 @@ def search_events(
 
             query = (
                 client.table("events")
-                .select("id,title,start_time,category,zip_code,venues(name)", count="exact")
+                .select("id,title,start_time,category,zip_code,venue_name,types,genres,images,venues(name)", count="exact")
                 .eq("zip_code", zip_code)
                 .gte("start_time", datetime.now(timezone.utc).isoformat())
                 .order("start_time")
@@ -257,10 +257,13 @@ def search_events(
                 EventSummary(
                         id=row["id"],
                         title=row["title"],
-                        venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
+                        venue_name=(row.get("venues") or {}).get("name") or row.get("venue_name") or "",
                         start_time=row["start_time"],
-                        category=row["category"],
-                        zip_code=row["zip_code"],
+                        category=row.get("category"),
+                        zip_code=row.get("zip_code"),
+                        types=row.get("types"),
+                        genres=row.get("genres"),
+                        images=row.get("images"),
                 )
                 for row in rows
             ]
@@ -309,7 +312,7 @@ def get_event(event_id: str) -> EventDetail:
         try:
             response = (
                 client.table("events")
-                .select("id,title,description,start_time,end_time,category,zip_code,ticket_url,venues(name)")
+                .select("*,venues(name)")
                 .eq("id", event_id)
                 .single()
                 .execute()
@@ -319,17 +322,34 @@ def get_event(event_id: str) -> EventDetail:
 
             if not row:
                 raise HTTPException(status_code=404, detail="Event not found")
-            
+
             return EventDetail(
                 id=row["id"],
                 title=row["title"],
-                description=row.get("description", ""),
-                venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
+                description=row.get("description"),
+                venue_name=(row.get("venues") or {}).get("name") or row.get("venue_name") or "",
                 start_time=row["start_time"],
-                end_time=row["end_time"],
-                category=row["category"],
-                zip_code=row["zip_code"],
+                end_time=row.get("end_time"),
+                category=row.get("category"),
+                zip_code=row.get("zip_code"),
                 ticket_url=row.get("ticket_url"),
+                target_audience=row.get("target_audience"),
+                types=row.get("types"),
+                genres=row.get("genres"),
+                social_media=row.get("social_media"),
+                timezone=row.get("timezone"),
+                when_text=row.get("when_text"),
+                where_text=row.get("where_text"),
+                artists_data=row.get("artists_data"),
+                price=row.get("price"),
+                food_available=row.get("food_available"),
+                age_restriction=row.get("age_restriction"),
+                categories=row.get("categories"),
+                tags=row.get("tags"),
+                event_url=row.get("event_url"),
+                images=row.get("images"),
+                source_url=row.get("source_url"),
+                confidence=row.get("confidence"),
             )
 
         except HTTPException:
@@ -342,13 +362,11 @@ def get_event(event_id: str) -> EventDetail:
             return EventDetail(
                 id=event["id"],
                 title=event["title"],
-                description="",
                 venue_name=event["venue_name"],
                 start_time=event["start_time"],
-                end_time=event["start_time"],  # placeholder
+                end_time=event["start_time"],
                 category=event["category"],
                 zip_code=event["zip_code"],
-                ticket_url=None,
             )
         
     raise HTTPException(status_code=404, detail="Event not found")

@@ -11,10 +11,13 @@ from pydantic import BaseModel, Field, model_validator
 class EventSummary(BaseModel):
     id: str
     title: str
-    venue_name: str
+    venue_name: str = ""
     start_time: datetime
-    category: str
-    zip_code: str = Field(pattern=r"^\d{5}$")
+    category: Optional[str] = None
+    zip_code: Optional[str] = None
+    types: Optional[list[str]] = None
+    genres: Optional[list[str]] = None
+    images: Optional[list[str]] = None
 
 
 class EventSearchResponse(BaseModel):
@@ -27,13 +30,30 @@ class EventSearchResponse(BaseModel):
 class EventDetail(BaseModel):
     id: str
     title: str
-    description: str
-    venue_name: str
-    category: str
+    description: Optional[str] = None
+    venue_name: str = ""
+    category: Optional[str] = None
     start_time: datetime
-    end_time: datetime
-    zip_code: str = Field(pattern=r"^\d{5}$")
+    end_time: Optional[datetime] = None
+    zip_code: Optional[str] = None
     ticket_url: Optional[str] = None
+    target_audience: Optional[str] = None
+    types: Optional[list[str]] = None
+    genres: Optional[list[str]] = None
+    social_media: Optional[dict] = None
+    timezone: Optional[str] = None
+    when_text: Optional[str] = None
+    where_text: Optional[str] = None
+    artists_data: Optional[list[str]] = None
+    price: Optional[dict] = None
+    food_available: Optional[bool] = None
+    age_restriction: Optional[str] = None
+    categories: Optional[list[str]] = None
+    tags: Optional[list[str]] = None
+    event_url: Optional[str] = None
+    images: Optional[list[str]] = None
+    source_url: Optional[str] = None
+    confidence: Optional[float] = None
 
 
 class EventCreate(BaseModel):
@@ -121,8 +141,15 @@ class VenueProfileRead(BaseModel):
     address_line: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
-    zip_code: str
+    zip_code: Optional[str] = None
     verified: bool = False
+    website: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    social_links: Optional[dict] = None
+    geo: Optional[dict] = None
+    source_url: Optional[str] = None
+    capacity: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

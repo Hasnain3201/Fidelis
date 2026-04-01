@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     )
     supabase_jwt_secret: str = ""
 
+    # Scraper / AI
+    scraper_ai_provider: str = "gemini"
+    google_api_key: str = ""
+    gemini_model: str = "gemini-2.0-flash-lite"
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.1-8b-instant"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,

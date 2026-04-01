@@ -31,3 +31,5 @@ logs
 .idea/
 
 .prettierignore
+
+scraper-old/
