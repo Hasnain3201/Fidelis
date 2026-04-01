@@ -221,63 +221,124 @@ export default function VenueDashboardPage() {
 
           <div className="dashboardGrid">
             <div className="miniCard">
-              <strong>Upcoming Events</strong>
+              <strong>Total Events</strong>
               <p>{venueEvents.length}</p>
             </div>
             <div className="miniCard">
-              <strong>Profile Status</strong>
-              <p>{venueProfile.verified ? "Verified" : "Pending"}</p>
+              <strong>Upcoming</strong>
+              <p>{venueEvents.filter((e) => new Date(e.start_time) > new Date()).length}</p>
             </div>
             <div className="miniCard">
-              <strong>ZIP</strong>
-              <p>{venueProfile.zip_code}</p>
+              <strong>Status</strong>
+              <p style={{ fontSize: 14, color: venueProfile.verified ? "#14b87d" : "#f59e0b" }}>
+                {venueProfile.verified ? "✓ Verified" : "Pending"}
+              </p>
             </div>
           </div>
 
           <div className="dashboardContentGrid">
             <div className="card">
-              <h2>Upcoming Schedule</h2>
+              <h2>Event Schedule</h2>
               {venueEvents.length === 0 ? (
                 <div className="emptyStateCard compact">
-                  <h3>No upcoming events yet.</h3>
+                  <h3>No events published yet.</h3>
                   <p className="meta">Publish your first event to populate this schedule.</p>
+                  <Link href="/venues/create-event" className="pageActionLink" style={{ marginTop: 8 }}>
+                    Create Event
+                  </Link>
                 </div>
               ) : (
                 <div className="listStack">
-                  {venueEvents.map((event) => (
-                    <div key={event.id} className="listItemRow">
-                      <div>
-                        <strong>{event.title}</strong>
-                        <p className="meta">{formatDateTime(event.start_time)} • {event.category}</p>
-                      </div>
-                      <Link href={`/events/${event.id}`} className="pageActionLink secondary">
-                        View
-                      </Link>
-                    </div>
-                  ))}
+                  {venueEvents
+                    .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+                    .map((event) => {
+                      const isUpcoming = new Date(event.start_time) > new Date();
+                      return (
+                        <div key={event.id} className="listItemRow">
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <strong style={{ fontSize: 14 }}>{event.title}</strong>
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  borderRadius: 999,
+                                  padding: "2px 8px",
+                                  background: isUpcoming ? "#eefbf4" : "#f5f7ff",
+                                  color: isUpcoming ? "#176344" : "#5a6278",
+                                  border: `1px solid ${isUpcoming ? "#d5e9de" : "#dce3f2"}`,
+                                }}
+                              >
+                                {isUpcoming ? "Upcoming" : "Past"}
+                              </span>
+                            </div>
+                            <p className="meta" style={{ margin: "3px 0 0", fontSize: 12 }}>
+                              {formatDateTime(event.start_time)} · {event.category}
+                            </p>
+                          </div>
+                          <Link href={`/events/${event.id}`} className="pageActionLink secondary" style={{ fontSize: 12, minHeight: 28, flexShrink: 0 }}>
+                            View
+                          </Link>
+                        </div>
+                      );
+                    })}
                 </div>
               )}
             </div>
 
             <div className="card">
-              <h2>Draft Events</h2>
-              <div className="emptyStateCard compact">
-                <h3>No drafts in progress.</h3>
-                <p className="meta">Create a draft to stage event details before publishing.</p>
-                <Link href="/venues/create-event" className="pageActionLink">
-                  Start Draft
-                </Link>
+              <h2>Quick Actions</h2>
+              <div style={{ display: "grid", gap: 10 }}>
+                {[
+                  { icon: "➕", label: "Create New Event", href: "/venues/create-event" },
+                  { icon: "🔍", label: "Browse Events", href: "/search" },
+                  { icon: "👤", label: "View My Profile", href: "/profile" },
+                ].map((action) => (
+                  <Link
+                    key={action.label}
+                    href={action.href}
+                    className="listItemRow"
+                    style={{ textDecoration: "none", justifyContent: "flex-start", gap: 12 }}
+                  >
+                    <span style={{ fontSize: 18 }}>{action.icon}</span>
+                    <strong style={{ fontSize: 14 }}>{action.label}</strong>
+                  </Link>
+                ))}
               </div>
             </div>
 
             <div className="card">
               <h2>Publishing Checklist</h2>
-              <ul className="simpleList">
-                <li>Venue profile completed</li>
-                <li>Account verified</li>
-                <li>Ticket URL and capacity set</li>
-                <li>Promotion copy approved</li>
-              </ul>
+              <div className="listStack">
+                {[
+                  { label: "Venue profile completed", done: true },
+                  { label: "Account verified", done: venueProfile.verified },
+                  { label: "First event published", done: venueEvents.length > 0 },
+                  { label: "Ticket URL added to events", done: false },
+                ].map((item) => (
+                  <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0" }}>
+                    <span
+                      style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: "50%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        background: item.done ? "#eefbf4" : "#f5f7ff",
+                        color: item.done ? "#176344" : "#9aa3b8",
+                        border: `1px solid ${item.done ? "#d5e9de" : "#dce3f2"}`,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {item.done ? "✓" : "·"}
+                    </span>
+                    <span style={{ fontSize: 13, color: item.done ? "#1c2334" : "#9aa3b8" }}>{item.label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div className="card phaseNote">

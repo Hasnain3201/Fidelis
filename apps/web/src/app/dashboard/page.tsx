@@ -234,8 +234,8 @@ export default function UserDashboardPage() {
               <p>{follows.length}</p>
             </div>
             <div className="miniCard">
-              <strong>Unread Alerts</strong>
-              <p>0</p>
+              <strong>Upcoming</strong>
+              <p>{favorites.filter((f) => f.start_time && new Date(f.start_time) > new Date()).length}</p>
             </div>
           </div>
 
@@ -322,10 +322,128 @@ export default function UserDashboardPage() {
 
             <div className="card">
               <h2>Notifications</h2>
-              <div className="emptyStateCard compact">
-                <h3>No notifications yet.</h3>
-                <p className="meta">You will see reminders for upcoming events and artist updates here.</p>
+              <div className="listStack">
+                {[
+                  {
+                    icon: "🎵",
+                    title: "Welcome to LIVEY!",
+                    body: "Start by searching for events near your ZIP code.",
+                    time: "Just now",
+                    unread: true,
+                  },
+                  {
+                    icon: "📅",
+                    title: "Save events to get reminders",
+                    body: "When you save an event, you will see upcoming reminders here.",
+                    time: "Platform tip",
+                    unread: false,
+                  },
+                  {
+                    icon: "🎤",
+                    title: "Follow artists you love",
+                    body: "Get notified when followed artists are added to new events.",
+                    time: "Platform tip",
+                    unread: false,
+                  },
+                ].map((notif) => (
+                  <div
+                    key={notif.title}
+                    className="listItemRow"
+                    style={{
+                      alignItems: "flex-start",
+                      background: notif.unread ? "#f5f0ff" : "#f9fbff",
+                      border: notif.unread ? "1px solid #dccfff" : "1px solid #e2e7f3",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: "50%",
+                        background: "#ede8ff",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 16,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {notif.icon}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                        <strong style={{ fontSize: 13 }}>{notif.title}</strong>
+                        {notif.unread && (
+                          <span
+                            style={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: "50%",
+                              background: "#8048ff",
+                              flexShrink: 0,
+                            }}
+                          />
+                        )}
+                      </div>
+                      <p className="meta" style={{ margin: "2px 0 0", fontSize: 12 }}>{notif.body}</p>
+                      <p className="meta" style={{ margin: "4px 0 0", fontSize: 11 }}>{notif.time}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
+            </div>
+
+            <div className="card">
+              <h2>Upcoming Events</h2>
+              {isLoading ? (
+                <div className="listStack">
+                  {Array.from({ length: 2 }).map((_, i) => (
+                    <div key={`upcoming-loading-${i}`} className="stateSkeletonCard compact" />
+                  ))}
+                </div>
+              ) : favorites.filter((f) => f.start_time && new Date(f.start_time) > new Date()).length === 0 ? (
+                <div className="emptyStateCard compact">
+                  <h3>No upcoming events.</h3>
+                  <p className="meta">Save future events and they will appear here as reminders.</p>
+                </div>
+              ) : (
+                <div className="listStack">
+                  {favorites
+                    .filter((f) => f.start_time && new Date(f.start_time) > new Date())
+                    .sort((a, b) => new Date(a.start_time!).getTime() - new Date(b.start_time!).getTime())
+                    .map((fav) => {
+                      const daysUntil = Math.ceil(
+                        (new Date(fav.start_time!).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+                      );
+                      return (
+                        <div key={fav.event_id} className="listItemRow">
+                          <div>
+                            <strong>{fav.title ?? "Event"}</strong>
+                            <p className="meta">{formatDate(fav.start_time)}</p>
+                          </div>
+                          <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+                            <span
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 700,
+                                borderRadius: 999,
+                                padding: "3px 9px",
+                                background: daysUntil <= 3 ? "#fff1f4" : "#eefbf4",
+                                color: daysUntil <= 3 ? "#902945" : "#176344",
+                                border: `1px solid ${daysUntil <= 3 ? "#efd2d9" : "#d5e9de"}`,
+                              }}
+                            >
+                              {daysUntil === 0 ? "Today!" : daysUntil === 1 ? "Tomorrow" : `${daysUntil}d away`}
+                            </span>
+                            <Link href={`/events/${fav.event_id}`} className="pageActionLink secondary" style={{ margin: 0, minHeight: 28, fontSize: 12 }}>
+                              View
+                            </Link>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
             </div>
 
             <div className="card">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { clearAuthSession, getAuthChangeEventName, getStoredAuthSession, type AuthSession } from "@/lib/auth";
@@ -21,6 +21,17 @@ export function SiteHeader() {
   const pathname = usePathname();
   const router = useRouter();
   const [session, setSession] = useState<AuthSession | null>(null);
+  const [headerSearch, setHeaderSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  function handleHeaderSearch(e: React.FormEvent) {
+    e.preventDefault();
+    const query = headerSearch.trim();
+    if (!query) return;
+    router.push(`/search?query=${encodeURIComponent(query)}`);
+    setHeaderSearch("");
+    searchRef.current?.blur();
+  }
 
   useEffect(() => {
     setSession(getStoredAuthSession());
@@ -66,14 +77,23 @@ export function SiteHeader() {
             })}
           </nav>
 
-          <div className="headerSearch">
-            <input type="text" placeholder="Search events, venues, artists" />
-          </div>
+          <form className="headerSearch" onSubmit={handleHeaderSearch}>
+            <input
+              ref={searchRef}
+              type="text"
+              placeholder="Search events, venues, artists"
+              value={headerSearch}
+              onChange={(e) => setHeaderSearch(e.target.value)}
+              aria-label="Search"
+            />
+          </form>
 
           <div className="authRow">
             {session ? (
               <>
-                <span className="authBadge">{session.role}</span>
+                <Link href="/profile" className="authBadge" style={{ cursor: "pointer" }}>
+                  {session.role}
+                </Link>
                 <Link href={getDashboardHref(session)} className="signupBtn">
                   Dashboard
                 </Link>
