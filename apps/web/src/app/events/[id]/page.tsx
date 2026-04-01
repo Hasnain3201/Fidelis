@@ -7,6 +7,7 @@ import { ShareButtons } from "@/components/share-buttons";
 import { ArtistFollowButton } from "@/components/artist-follow-button";
 import { FavoriteEventButton } from "@/components/favorite-event-button";
 import { getEventArtists, getEventDetail, type EventArtist, type EventDetailResponse } from "@/lib/api";
+import { RecentlyViewedTracker } from "@/components/recently-viewed-tracker";
 
 type EventDetailPageProps = {
   params: Promise<{ id: string }>;
@@ -81,106 +82,116 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
   const heroImage = pickImage(event.id);
 
   return (
-    <section className="siteSection">
-      <div className="siteContainer eventDetailLayout">
-        <div className="eventDetailMain">
-          <div className="eventHeroMedia">
-            <Image src={heroImage} alt={event.title} fill priority sizes="(max-width: 920px) 100vw, 68vw" />
-          </div>
+    <>
+      <RecentlyViewedTracker
+        id={event.id}
+        kind="event"
+        label={event.title}
+        image={heroImage}
+        href={`/events/${event.id}`}
+      />
 
-          <div className="eventDetailCard">
-            <p className="eventDetailType">{categoryLabel}</p>
-            <h1>{event.title}</h1>
-            <p className="meta">{event.description || "No event description provided yet."}</p>
-
-            <div className="eventMetaGrid">
-              <div className="eventMetaItem">
-                <strong>Date</strong>
-                <span>{formatDate(event.start_time)}</span>
-              </div>
-              <div className="eventMetaItem">
-                <strong>Time</strong>
-                <span>
-                  {formatTime(event.start_time)} - {formatTime(event.end_time)}
-                </span>
-              </div>
-              <div className="eventMetaItem">
-                <strong>Venue</strong>
-                <span>{event.venue_name}</span>
-              </div>
-              <div className="eventMetaItem">
-                <strong>ZIP Code</strong>
-                <span>{event.zip_code}</span>
-              </div>
-              <div className="eventMetaItem">
-                <strong>Category</strong>
-                <span>{categoryLabel}</span>
-              </div>
+      <section className="siteSection">
+        <div className="siteContainer eventDetailLayout">
+          <div className="eventDetailMain">
+            <div className="eventHeroMedia">
+              <Image src={heroImage} alt={event.title} fill priority sizes="(max-width: 920px) 100vw, 68vw" />
             </div>
 
-            <div className="tagRow">
-              <span className="tagPill">{categoryLabel}</span>
-              <span className="tagPill">Live Event</span>
+            <div className="eventDetailCard">
+              <p className="eventDetailType">{categoryLabel}</p>
+              <h1>{event.title}</h1>
+              <p className="meta">{event.description || "No event description provided yet."}</p>
+
+              <div className="eventMetaGrid">
+                <div className="eventMetaItem">
+                  <strong>Date</strong>
+                  <span>{formatDate(event.start_time)}</span>
+                </div>
+                <div className="eventMetaItem">
+                  <strong>Time</strong>
+                  <span>
+                    {formatTime(event.start_time)} - {formatTime(event.end_time)}
+                  </span>
+                </div>
+                <div className="eventMetaItem">
+                  <strong>Venue</strong>
+                  <span>{event.venue_name}</span>
+                </div>
+                <div className="eventMetaItem">
+                  <strong>ZIP Code</strong>
+                  <span>{event.zip_code}</span>
+                </div>
+                <div className="eventMetaItem">
+                  <strong>Category</strong>
+                  <span>{categoryLabel}</span>
+                </div>
+              </div>
+
+              <div className="tagRow">
+                <span className="tagPill">{categoryLabel}</span>
+                <span className="tagPill">Live Event</span>
+              </div>
+
+              <div className="eventDetailActions">
+                {event.ticket_url ? (
+                  <a href={event.ticket_url} target="_blank" rel="noreferrer" className="pageActionLink">
+                    Get Tickets
+                  </a>
+                ) : (
+                  <Button type="button" disabled>
+                    Tickets Unavailable
+                  </Button>
+                )}
+
+                <CopyLinkButton />
+                <ShareButtons title={event.title} />
+
+                <FavoriteEventButton eventId={event.id} />
+
+                <Link href="/search" className="pageActionLink secondary">
+                  Back to Search
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          <aside className="eventDetailSidebar">
+            <div className="eventSidebarCard">
+              <h2>About This Event</h2>
+              <p className="meta">Loaded from live backend data through FastAPI `/api/v1/events/{id}`.</p>
             </div>
 
-            <div className="eventDetailActions">
-              {event.ticket_url ? (
-                <a href={event.ticket_url} target="_blank" rel="noreferrer" className="pageActionLink">
-                  Get Tickets
-                </a>
-              ) : (
-                <Button type="button" disabled>
-                  Tickets Unavailable
-                </Button>
-              )}
-
-              <CopyLinkButton />
-              <ShareButtons title={event.title} />
-
-              <FavoriteEventButton eventId={event.id} />
-
-              <Link href="/search" className="pageActionLink secondary">
-                Back to Search
-              </Link>
+            <div className="eventSidebarCard">
+              <h2>Venue Snapshot</h2>
+              <p className="meta">{event.venue_name}</p>
+              <p className="meta">
+                Event details, timing, category, and ticket link are now sourced from API payloads instead of Week 2 mock
+                cards.
+              </p>
             </div>
-          </div>
-        </div>
 
-        <aside className="eventDetailSidebar">
-          <div className="eventSidebarCard">
-            <h2>About This Event</h2>
-            <p className="meta">Loaded from live backend data through FastAPI `/api/v1/events/{id}`.</p>
-          </div>
-
-          <div className="eventSidebarCard">
-            <h2>Venue Snapshot</h2>
-            <p className="meta">{event.venue_name}</p>
-            <p className="meta">
-              Event details, timing, category, and ticket link are now sourced from API payloads instead of Week 2 mock
-              cards.
-            </p>
-          </div>
-
-          <div className="eventSidebarCard">
-            <h2>Artists</h2>
-            {artists.length ? (
-              <div className="listStack">
-                {artists.map((artist) => (
-                  <div key={artist.id} className="listItemRow">
-                    <div>
-                      <strong>{artist.stage_name || "Artist"}</strong>
-                      <p className="meta">{artist.genre || "Genre TBD"}</p>
+            <div className="eventSidebarCard">
+              <h2>Artists</h2>
+              {artists.length ? (
+                <div className="listStack">
+                  {artists.map((artist) => (
+                    <div key={artist.id} className="listItemRow">
+                      <div>
+                        <strong>{artist.stage_name || "Artist"}</strong>
+                        <p className="meta">{artist.genre || "Genre TBD"}</p>
+                      </div>
+                      <ArtistFollowButton artistId={artist.id} />
                     </div>
-                    <ArtistFollowButton artistId={artist.id} />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="meta">Artist lineup will appear here when linked.</p>
-            )}
-          </div>
-        </aside>
-      </div>
-    </section>
+                  ))}
+                </div>
+              ) : (
+                <p className="meta">Artist lineup will appear here when linked.</p>
+              )}
+            </div>
+          </aside>
+        </div>
+      </section>
+    </>
   );
 }

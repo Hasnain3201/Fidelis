@@ -1,17 +1,38 @@
 "use client";
 
+import Image from "next/image";
 import { type FormEvent, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { FilterBar } from "@/components/filter-bar";
-import { FilterSidebar } from "@/components/filter-sidebar";
-import { EventShowcaseCard, type EventCardItem } from "@/components/showcase-cards";
+import {
+  ArtistCard,
+  type ArtistCardItem,
+  EventShowcaseCard,
+  type EventCardItem,
+  VenueCard,
+  type VenueCardItem,
+} from "@/components/showcase-cards";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { searchEvents, type EventSummary } from "@/lib/api";
+import {
+  listArtists,
+  listVenues,
+  searchEvents,
+  type ArtistSummary,
+  type EventSummary,
+  type VenueSummary,
+} from "@/lib/api";
 import { isValidZipCode, normalizeZipInput, zipMatchesEvent } from "@/lib/zip";
+import { FilterBar } from "@/components/filter-bar";
+import {
+  readRecentlyViewed,
+  removeRecentlyViewed,
+  type RecentlyViewedEntry,
+  type RecentlyViewedKind,
+} from "@/lib/recently-viewed";
 
 const QUICK_FILTERS = ["This Weekend", "Free Events", "Live Music", "Comedy Shows", "DJ Sets"];
 const DEFAULT_DISCOVERY_ZIP = "10001";
+
 const EVENT_CARD_IMAGES = [
   "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=900&q=80",
   "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=900&q=80",
@@ -19,13 +40,26 @@ const EVENT_CARD_IMAGES = [
   "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=900&q=80",
 ];
 
-function matchesQuickFilter(price: string, tags: string[], subtitle: string, activeQuick: string): boolean {
-  if (activeQuick === "This Weekend") return true;
-  if (activeQuick === "Free Events") return price.toLowerCase().includes("free") || price.includes("$0");
-  if (activeQuick === "Live Music") return tags.some((tag) => tag.toLowerCase().includes("live"));
-  if (activeQuick === "Comedy Shows") return subtitle.toLowerCase().includes("comedy");
-  if (activeQuick === "DJ Sets") return subtitle.toLowerCase().includes("dj");
-  return true;
+const ARTIST_CARD_IMAGES = [
+  "https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=900&q=80",
+  "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=900&q=80",
+  "https://images.unsplash.com/photo-1503095396549-807759245b35?auto=format&fit=crop&w=900&q=80",
+  "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=900&q=80",
+  "https://images.unsplash.com/photo-1464863979621-258859e62245?auto=format&fit=crop&w=900&q=80",
+];
+
+const VENUE_CARD_IMAGES = [
+  "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=80",
+  "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=900&q=80",
+  "https://images.unsplash.com/photo-1497032205916-ac775f0649ae?auto=format&fit=crop&w=900&q=80",
+  "https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?auto=format&fit=crop&w=900&q=80",
+];
+
+function toTitleCase(value: string): string {
+  return value
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function formatDateLabel(value: string): string {
@@ -47,14 +81,22 @@ function formatTimeLabel(value: string): string {
   });
 }
 
-function toTitleCase(value: string): string {
-  return value
-    .split("-")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+function pickImage(id: string, images: string[]): string {
+  let hash = 0;
+  for (const char of id) hash = (hash + char.charCodeAt(0)) % images.length;
+  return images[hash];
 }
 
-function mapSummaryToCardItem(item: EventSummary, index: number): EventCardItem {
+function matchesQuickFilter(price: string, tags: string[], subtitle: string, activeQuick: string): boolean {
+  if (activeQuick === "This Weekend") return true;
+  if (activeQuick === "Free Events") return price.toLowerCase().includes("free") || price.includes("$0");
+  if (activeQuick === "Live Music") return tags.some((tag) => tag.toLowerCase().includes("live"));
+  if (activeQuick === "Comedy Shows") return subtitle.toLowerCase().includes("comedy");
+  if (activeQuick === "DJ Sets") return subtitle.toLowerCase().includes("dj");
+  return true;
+}
+
+function mapEventToCard(item: EventSummary, index: number): EventCardItem {
   const categoryLabel = toTitleCase(item.category);
   return {
     id: item.id,
@@ -64,7 +106,7 @@ function mapSummaryToCardItem(item: EventSummary, index: number): EventCardItem 
     dateLabel: formatDateLabel(item.start_time),
     timeLabel: formatTimeLabel(item.start_time),
     zipCode: item.zip_code,
-    location: `${item.zip_code}`,
+    location: item.zip_code,
     venue: item.venue_name,
     price: "TBD",
     image: EVENT_CARD_IMAGES[index % EVENT_CARD_IMAGES.length],
@@ -72,47 +114,107 @@ function mapSummaryToCardItem(item: EventSummary, index: number): EventCardItem 
   };
 }
 
+function mapArtistToCard(artist: ArtistSummary): ArtistCardItem {
+  const genreLabel = artist.genre?.trim() || "Genre TBD";
+  return {
+    id: artist.id,
+    name: artist.stage_name,
+    location: genreLabel,
+    description: artist.bio?.trim() || "Artist profile details are available on linked event pages.",
+    image: pickImage(artist.id, ARTIST_CARD_IMAGES),
+    tags: [genreLabel],
+    badge: "Trending",
+  };
+}
+
+function mapVenueToCard(venue: VenueSummary): VenueCardItem {
+  const cityState = [venue.city, venue.state].filter(Boolean).join(", ");
+  const location = cityState || venue.zip_code;
+  return {
+    id: venue.id,
+    name: venue.name,
+    tagline: venue.verified ? "Verified venue" : "Community venue",
+    description: venue.description?.trim() || "Venue profile details are available on event pages.",
+    location,
+    image: pickImage(venue.id, VENUE_CARD_IMAGES),
+    tags: [venue.zip_code],
+    badge: venue.verified ? "Verified" : "Venue",
+  };
+}
+
+const withEventBadge = (items: EventCardItem[], badge: string) => items.map((item) => ({ ...item, badge }));
+const withArtistBadge = (items: ArtistCardItem[], badge: string) => items.map((item) => ({ ...item, badge }));
+const withVenueBadge = (items: VenueCardItem[], badge: string) => items.map((item) => ({ ...item, badge }));
+
 export default function HomePage() {
+  const [recentlyViewed, setRecentlyViewed] = useState<RecentlyViewedEntry[]>([]);
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+
   const [searchText, setSearchText] = useState("");
   const [zipCode, setZipCode] = useState("");
   const [zipError, setZipError] = useState("");
   const [activeQuick, setActiveQuick] = useState(QUICK_FILTERS[0]);
+
   const [eventItems, setEventItems] = useState<EventCardItem[]>([]);
+  const [artistItems, setArtistItems] = useState<ArtistCardItem[]>([]);
+  const [venueItems, setVenueItems] = useState<VenueCardItem[]>([]);
   const [cardsMessage, setCardsMessage] = useState("");
+
+  useEffect(() => {
+    const load = () => setRecentlyViewed(readRecentlyViewed().slice(0, 10));
+    load();
+
+    window.addEventListener("storage", load);
+    return () => window.removeEventListener("storage", load);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadEventCardsFromApi() {
-      try {
-        const response = await searchEvents(DEFAULT_DISCOVERY_ZIP);
-        if (cancelled) return;
+    async function loadShelves() {
+      const [eventsResult, artistsResult, venuesResult] = await Promise.allSettled([
+        searchEvents(DEFAULT_DISCOVERY_ZIP),
+        listArtists({ limit: 30 }),
+        listVenues({ limit: 30 }),
+      ]);
 
-        if (response.items.length > 0) {
-          setEventItems(response.items.map(mapSummaryToCardItem));
-          setCardsMessage("Live event cards loaded from backend.");
-          return;
-        }
+      if (cancelled) return;
 
+      if (eventsResult.status === "fulfilled") {
+        setEventItems(eventsResult.value.items.map(mapEventToCard));
+      } else {
         setEventItems([]);
-        setCardsMessage("No events available yet in the database.");
-      } catch (error) {
-        if (cancelled) return;
-        setEventItems([]);
-        const message = error instanceof Error ? error.message : "Unable to load events.";
-        setCardsMessage(`Live event cards unavailable (${message}).`);
+      }
+
+      if (artistsResult.status === "fulfilled") {
+        setArtistItems(artistsResult.value.map(mapArtistToCard));
+      } else {
+        setArtistItems([]);
+      }
+
+      if (venuesResult.status === "fulfilled") {
+        setVenueItems(venuesResult.value.map(mapVenueToCard));
+      } else {
+        setVenueItems([]);
+      }
+
+      if (
+        eventsResult.status === "rejected" &&
+        artistsResult.status === "rejected" &&
+        venuesResult.status === "rejected"
+      ) {
+        setCardsMessage("Live content shelves are unavailable right now.");
+      } else {
+        setCardsMessage("");
       }
     }
 
-    void loadEventCardsFromApi();
+    void loadShelves();
     return () => {
       cancelled = true;
     };
   }, []);
-
-  const featuredEvents = eventItems.slice(0, 4);
 
   const visibleEvents = useMemo(() => {
     const search = searchText.trim().toLowerCase();
@@ -127,9 +229,43 @@ export default function HomePage() {
       const quickMatch = matchesQuickFilter(event.price, event.tags, event.subtitle, activeQuick);
       const zipMatch = zipMatchesEvent(zipCode, event.zipCode);
 
-      return searchMatch && zipMatch && quickMatch;
+      return searchMatch && quickMatch && zipMatch;
     });
   }, [activeQuick, eventItems, searchText, zipCode]);
+
+  const promoted = useMemo(() => withEventBadge(visibleEvents.slice(0, 3), "Promoted"), [visibleEvents]);
+
+  const trendingSearches = useMemo(
+    () => withArtistBadge(artistItems.slice(0, 5), "Trending"),
+    [artistItems],
+  );
+
+  const popularNearYou = useMemo(() => {
+    const nearSorted = [...visibleEvents].sort((a, b) => {
+      const aNear = zipCode.trim() && zipMatchesEvent(zipCode, a.zipCode) ? 1 : 0;
+      const bNear = zipCode.trim() && zipMatchesEvent(zipCode, b.zipCode) ? 1 : 0;
+      return bNear - aNear;
+    });
+    return withEventBadge(nearSorted.slice(0, 5), "Popular");
+  }, [visibleEvents, zipCode]);
+
+  const popularCities = useMemo(() => {
+    const citySorted = [...venueItems].sort((a, b) => a.location.localeCompare(b.location));
+    return withVenueBadge(citySorted.slice(0, 5), "City Pick");
+  }, [venueItems]);
+
+  const featuredRailItems = useMemo(() => {
+    const source = promoted.length > 0 ? [...promoted, ...popularNearYou, ...visibleEvents] : eventItems;
+    const seen = new Set<string>();
+
+    return source
+      .filter((item) => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      })
+      .slice(0, 6);
+  }, [promoted, popularNearYou, visibleEvents, eventItems]);
 
   function validateZipInput(value: string): string {
     if (!value.trim()) return "ZIP code is required to search.";
@@ -154,6 +290,19 @@ export default function HomePage() {
       router.push(`/search?${params.toString()}`);
     });
   }
+
+  function handleRemoveRecentlyViewed(
+    event: React.MouseEvent<HTMLButtonElement>,
+    kind: RecentlyViewedKind,
+    id: string,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+  
+    const next = removeRecentlyViewed(kind, id);
+    setRecentlyViewed(next.slice(0, 10));
+  }
+
 
   return (
     <>
@@ -227,42 +376,111 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="siteSection">
-        <div className="siteContainer">
-          <div className="sectionHeader">
-            <div>
-              <h2>Featured Events</h2>
-              <p>Hand-picked experiences you&apos;ll love</p>
-            </div>
-            <a className="sectionLink" href="/search">
-              View All
-            </a>
-          </div>
+      <section className="siteSection fullWidthSection">
+        <div className="fullWidthInner">
           {cardsMessage ? <p className="meta">{cardsMessage}</p> : null}
 
-          <div className="cardsGrid four">
-            {featuredEvents.map((item) => (
-              <EventShowcaseCard key={item.id} item={item} />
-            ))}
-          </div>
+          <div className="homeDiscoveryLayout">
+            <div className="homeDiscoveryMain">
+              {recentlyViewed.length > 0 ? (
+                <div className="shelfWrap">
+                  <div className="shelfHeading">
+                    <h2 className="shelfTitle">Recently Viewed</h2>
+                  </div>
+                  <div className="recentlyViewedList">
+                    {recentlyViewed.map((item) => (
+                      <a key={`${item.kind}-${item.id}`} href={item.href} className="recentlyViewedChip">
+                        <Image
+                          src={item.image}
+                          alt={item.label}
+                          width={30}
+                          height={30}
+                          className="recentlyViewedAvatar"
+                        />
+                        <span className="recentlyViewedName">{item.label}</span>
+                        <button
+                          type="button"
+                          className="recentlyViewedClose"
+                          aria-label={`Remove ${item.label} from recently viewed`}
+                          onClick={(event) => handleRemoveRecentlyViewed(event, item.kind, item.id)}
+                        >
+                          ×
+                        </button>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
-          <div className="discoveryLayout">
-            <FilterSidebar />
-
-            <div>
-              <div className="sectionHeader listHeader">
-                <div>
-                  <h2>All Events</h2>
-                  <p>{visibleEvents.length} events found</p>
+              <div className="shelfWrap">
+                <div className="shelfHeading">
+                  <h2 className="shelfTitle">Promoted</h2>
+                </div>
+                <div className="cardsGrid three">
+                  {promoted.map((item) => (
+                    <EventShowcaseCard key={`promoted-${item.id}`} item={item} />
+                  ))}
                 </div>
               </div>
 
-              <div className="cardsGrid eventsDense">
-                {visibleEvents.map((item) => (
-                  <EventShowcaseCard key={item.id} item={item} />
-                ))}
+              <div className="shelfWrap">
+                <div className="shelfHeading">
+                  <h2 className="shelfTitle">Trending Searches</h2>
+                </div>
+                <div className="cardsGrid five">
+                  {trendingSearches.map((item) => (
+                    <ArtistCard key={`trend-${item.id}`} item={item} />
+                  ))}
+                </div>
+              </div>
+
+              <div className="shelfWrap">
+                <div className="shelfHeading">
+                  <h2 className="shelfTitle">Popular Near You</h2>
+                </div>
+                <div className="cardsGrid five">
+                  {popularNearYou.map((item) => (
+                    <EventShowcaseCard key={`near-${item.id}`} item={item} />
+                  ))}
+                </div>
+              </div>
+
+              <div className="shelfWrap">
+                <div className="shelfHeading">
+                  <h2 className="shelfTitle">Popular Cities</h2>
+                </div>
+                <div className="cardsGrid five">
+                  {popularCities.map((item) => (
+                    <VenueCard key={`city-${item.id}`} item={item} />
+                  ))}
+                </div>
               </div>
             </div>
+
+            <aside className="featuredRail" aria-label="Featured events">
+              <p className="featuredRailKicker">Featured Events</p>
+
+              <div className="featuredRailList">
+                {featuredRailItems.map((item) => (
+                  <a key={`rail-${item.id}`} href={`/events/${item.id}`} className="featuredRailItem">
+                    <Image
+                      src={item.image}
+                      alt={item.title}
+                      width={96}
+                      height={64}
+                      className="featuredRailThumb"
+                    />
+                    <div className="featuredRailMeta">
+                      <p className="featuredRailTag">{item.badge ?? "Event"}</p>
+                      <strong>{item.title}</strong>
+                      <span>
+                        {item.dateLabel} - {item.timeLabel}
+                      </span>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </aside>
           </div>
         </div>
       </section>
