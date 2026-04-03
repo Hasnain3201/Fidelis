@@ -370,6 +370,9 @@ export default function EventsSearchPage() {
 
       <section className="siteSection fullWidthSection" style={{ paddingTop: 0 }}>
         <div className="fullWidthInner">
+          <div className="shelfHeading">
+            <h2 className="shelfTitle">Find Your Own Events!</h2>
+          </div>
           <div className="discoveryLayout">
             <aside className="filterPanel searchFilterPanel" aria-busy={isSearching}>
               <form onSubmit={onSubmit} noValidate>
