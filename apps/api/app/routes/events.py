@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query, HTTPException, Depends, status
 
 from app.db.supabase import get_supabase_client
-from app.models.event_schemas import EventSummary, EventSearchResponse, EventDetail
+from app.models.event_schemas import EventSummary, EventSearchResponse, EventDetail, TrendingContentItem
 
 from app.core.auth import require_user_id
 
@@ -64,15 +64,16 @@ def build_event_query(
     categories: Optional[List[str]] = None,
     venue: Optional[str] = None,
     include_count: bool = False,
+    is_promoted: Optional[bool] = None,
 ):
     table = client.table("events")
     if include_count:
         q = table.select(
-            "id,title,start_time,category,zip_code,venues(name, city, state)",
+            "id,title,start_time,category,zip_code,is_promoted,venues(name, city, state)",
             count="exact",
         )
     else:
-        q = table.select("id,title,start_time,category,zip_code,venues(name, city, state)")
+        q = table.select("id,title,start_time,category,zip_code,is_promoted,venues(name, city, state)")
 
     q = q.order("start_time")
 
@@ -101,6 +102,9 @@ def build_event_query(
     if categories:
         q = q.in_("category", categories)
 
+    if is_promoted is not None:
+        q = q.eq("is_promoted", is_promoted)
+
     if query:
         q = q.ilike("title", f"%{query}%")
 
@@ -115,7 +119,7 @@ def list_events(
 
     query = (
         client.table("events")
-        .select("id,title,start_time,category,zip_code,venues(name)")
+        .select("events(id,title,start_time,category,zip_code,is_promoted,venues(name))")
         .order("start_time")
         .limit(limit)
     )
@@ -163,6 +167,7 @@ def search_events(
 
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
+    is_promoted: Optional[bool] = Query(default=None),
 ):
     type_tokens = _parse_type_tokens(types)
     allowed_sorts: set[EventSort] = {"recommended", "dateSoonest", "dateLatest"}
@@ -185,6 +190,7 @@ def search_events(
         categories=categories,
         venue=venue,
         include_count=True,
+        is_promoted=is_promoted
     ).range(offset, offset + limit - 1)
 
     try:
@@ -285,7 +291,7 @@ async def get_recommended_events(user_id: UUID = Depends(require_user_id)):
         artist_response = (
             client
             .table("event_artists")
-            .select("events(id,title,start_time,category,zip_code,venues(name))")
+            .select("events(id,title,start_time,category,zip_code,is_promoted,venues(name))")
             .in_("artist_id", artist_ids)
             .execute()
         ).data or []
@@ -313,12 +319,34 @@ async def get_recommended_events(user_id: UUID = Depends(require_user_id)):
             venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
             start_time=row["start_time"],
             category=row["category"],
-            zip_code=row["zip_code"]
+            zip_code=row["zip_code"],
+            is_promoted=row.get("is_promoted", False),
         )
         for row in combined
     ]
 
     return items
+
+@router.get("/trending/content", response_model=list[TrendingContentItem])
+async def get_trending_content(limit: int = Query(10, ge=1, le=50)):
+    client = _get_supabase_client_or_503()
+
+    response = client.rpc("get_popular_content", {"limit_count": limit}).execute()
+    rows = response.data or []
+
+    return [
+        TrendingContentItem(
+            item_type=row["item_type"],
+            item_id=row["item_id"],
+            label=row["label"],
+            start_time=row.get("start_time"),
+            category=row.get("category"),
+            zip_code=row.get("zip_code"),
+            venue_name=row.get("venue_name"),
+            popularity_count=row.get("popularity_count", 0),
+        )
+        for row in rows
+    ]
 
 @router.get("/trending", response_model=list[EventSummary])
 async def get_trending_events():

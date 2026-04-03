@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { clearAuthSession, getAuthChangeEventName, getStoredAuthSession, type AuthSession } from "@/lib/auth";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Events" },
+  { href: "/events", label: "Events" },
   { href: "/venues", label: "Venues" },
   { href: "/artists", label: "Artists" },
 ];
