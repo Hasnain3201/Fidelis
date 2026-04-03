@@ -157,81 +157,11 @@ export default function HomePage() {
 
   return (
     <>
-      <section className="heroBand">
-        <div className="siteContainer heroContent">
-          <div className="heroBadge">Discover local events in your area</div>
-
-          <h1 className="heroTitle">
-            Find Your Next
-            <span> Unforgettable Experience</span>
-          </h1>
-
-          <p className="heroCopy">
-            Connect with local venues, discover amazing artists, and never miss a show. Your community&apos;s
-            entertainment scene, all in one place.
-          </p>
-
-          <form className="heroSearchForm" onSubmit={openSearchResults} noValidate>
-            <div className="heroSearchRow">
-              <Input
-                value={searchText}
-                onChange={(event) => setSearchText(event.target.value)}
-                placeholder="Search events, artists, venues"
-                maxLength={120}
-                aria-label="Search term"
-              />
-              <Input
-                value={zipCode}
-                onChange={(event) => {
-                  const nextZip = normalizeZipInput(event.target.value);
-                  setZipCode(nextZip);
-                  if (zipError) {
-                    setZipError(validateZipInput(nextZip));
-                  }
-                }}
-                onBlur={() => setZipError(validateZipInput(zipCode))}
-                placeholder="ZIP code"
-                inputMode="numeric"
-                autoComplete="postal-code"
-                maxLength={10}
-                aria-label="ZIP code"
-                aria-invalid={Boolean(zipError)}
-              />
-              <Button type="submit" className="heroSearchBtn" disabled={isPending}>
-                {isPending ? "Searching..." : "Search"}
-              </Button>
-            </div>
-            {zipError ? (
-              <p className="fieldError" role="alert">
-                {zipError}
-              </p>
-            ) : null}
-          </form>
-
-          <FilterBar items={QUICK_FILTERS} activeItem={activeQuick} onSelect={setActiveQuick} />
-
-          <div className="heroStats">
-            <div className="heroStat">
-              <strong>500+</strong>
-              <span>Events Monthly</span>
-            </div>
-            <div className="heroStat">
-              <strong>200+</strong>
-              <span>Local Venues</span>
-            </div>
-            <div className="heroStat">
-              <strong>1,000+</strong>
-              <span>Artists</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section className="siteSection">
         <div className="siteContainer">
           <div className="sectionHeader">
             <div>
-              <h2>Featured Events</h2>
+              <h2>Recommended Events</h2>
               <p>Hand-picked experiences you&apos;ll love</p>
             </div>
             <a className="sectionLink" href="/search">
