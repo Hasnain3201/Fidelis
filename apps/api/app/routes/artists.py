@@ -3,12 +3,15 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.core.auth import AuthContext, require_managed_artist, require_role
-
+from app.core.auth import AuthContext, require_managed_artist, require_role, require_user_id
 from app.db.supabase import get_supabase_client, get_supabase_client_for_user
 from app.db.supabase_admin import get_supabase_admin_client
-
-from app.models.artist_schemas import ArtistProfileCreate, ArtistProfileRead, ArtistProfileUpdate
+from app.models.artist_schemas import (
+    ArtistProfileCreate,
+    ArtistProfileRead,
+    ArtistProfileUpdate,
+    ArtistSearchResponse,
+)
 
 router = APIRouter()
 
@@ -23,7 +26,7 @@ def _get_supabase_client_or_503():
 
 
 # ---------------------------------------------------------------------------
-# Artist profile  (role: artist + approved claim)
+# Public discovery endpoints
 # ---------------------------------------------------------------------------
 
 @router.get("/", response_model=list[ArtistProfileRead])
@@ -47,7 +50,87 @@ def list_artists(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Failed to load artists",
         )
+
     return response.data or []
+
+
+@router.get("/search", response_model=ArtistSearchResponse)
+def search_artists(
+    query: Optional[str] = Query(default=None),
+    genre: Optional[str] = Query(default=None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+):
+    client = _get_supabase_client_or_503()
+    offset = (page - 1) * limit
+
+    q = client.table("artists").select(_ARTIST_COLS, count="exact").order("stage_name")
+
+    if query and query.strip():
+        q = q.ilike("stage_name", f"%{query.strip()}%")
+    if genre and genre.strip():
+        q = q.ilike("genre", f"%{genre.strip()}%")
+
+    q = q.range(offset, offset + limit - 1)
+
+    try:
+        response = q.execute()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to search artists",
+        )
+
+    rows = response.data or []
+    total = response.count if isinstance(response.count, int) else len(rows)
+
+    return ArtistSearchResponse(
+        items=rows,
+        page=page,
+        limit=limit,
+        total=total,
+    )
+
+
+@router.get("/popular", response_model=list[ArtistProfileRead])
+def get_popular_artists(limit: int = Query(20, ge=1, le=100)):
+    client = _get_supabase_client_or_503()
+
+    try:
+        response = client.rpc("get_popular_artists", {"limit_count": limit}).execute()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to load popular artists",
+        )
+
+    return response.data or []
+
+
+@router.get("/recommended", response_model=list[ArtistProfileRead])
+def get_recommended_artists(
+    user_id: str = Depends(require_user_id),
+    limit: int = Query(20, ge=1, le=100),
+):
+    client = _get_supabase_client_or_503()
+
+    try:
+        response = client.rpc(
+            "get_recommended_artists",
+            {"for_user": user_id, "limit_count": limit},
+        ).execute()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to load recommended artists",
+        )
+
+    return response.data or []
+
+
+# ---------------------------------------------------------------------------
+# Managed artist profile endpoints (role: artist + approved claim)
+# ---------------------------------------------------------------------------
 
 @router.get("/mine", response_model=ArtistProfileRead)
 def get_my_artist_profile(pair: tuple[AuthContext, str] = Depends(require_managed_artist)):
@@ -138,6 +221,7 @@ def update_artist_profile(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found after update")
     return rows[0]
 
+
 @router.get("/{artist_id}/events")
 async def get_artist_events(artist_id: UUID):
     client = _get_supabase_client_or_503()
@@ -155,9 +239,8 @@ async def get_artist_events(artist_id: UUID):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to load artist events",
         )
-    
-    data = response.data or []
 
+    data = response.data or []
     events = []
 
     for row in data:
@@ -168,7 +251,7 @@ async def get_artist_events(artist_id: UUID):
             "id": event.get("id"),
             "title": event.get("title"),
             "start_time": event.get("start_time"),
-            "venue_name": venue.get("name")
+            "venue_name": venue.get("name"),
         })
 
     return events

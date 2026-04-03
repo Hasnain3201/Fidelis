@@ -62,6 +62,20 @@ export type ArtistSummary = {
   media_url?: string | null;
 };
 
+export type ArtistSearchResponse = {
+  items: ArtistSummary[];
+  page: number;
+  limit: number;
+  total: number;
+};
+
+export type ArtistSearchParams = {
+  query?: string;
+  genre?: string;
+  page?: number;
+  limit?: number;
+};
+
 export type TrendingContentItem = {
   item_type: "event" | "artist";
   item_id: string;
@@ -316,6 +330,50 @@ export async function listArtists(params?: { query?: string; genre?: string; lim
   }
   if (!response.ok) throw new Error(await parseErrorMessage(response));
   return (await response.json()) as ArtistSummary[];
+}
+
+export async function searchArtistsWithFilters(
+  params: ArtistSearchParams,
+): Promise<ArtistSearchResponse> {
+  const url = new URL("/api/v1/artists/search", API_BASE);
+  if (params.query?.trim()) url.searchParams.set("query", params.query.trim());
+  if (params.genre?.trim()) url.searchParams.set("genre", params.genre.trim());
+  if (params.page && params.page > 1) url.searchParams.set("page", String(params.page));
+  if (params.limit) url.searchParams.set("limit", String(params.limit));
+
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(url.toString(), { cache: "no-store" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Network request failed.";
+    throw new Error(`${message} Confirm the API is running at ${API_BASE}.`);
+  }
+
+  if (!response.ok) throw new Error(await parseErrorMessage(response));
+  return (await response.json()) as ArtistSearchResponse;
+}
+
+export async function getPopularArtists(limit = 20): Promise<ArtistSummary[]> {
+  const url = new URL("/api/v1/artists/popular", API_BASE);
+  url.searchParams.set("limit", String(limit));
+
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(url.toString(), { cache: "no-store" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Network request failed.";
+    throw new Error(`${message} Confirm the API is running at ${API_BASE}.`);
+  }
+
+  if (!response.ok) throw new Error(await parseErrorMessage(response));
+  return (await response.json()) as ArtistSummary[];
+}
+
+export async function getRecommendedArtists(
+  session: AuthSession,
+  limit = 20,
+): Promise<ArtistSummary[]> {
+  return fetchApi<ArtistSummary[]>(`/api/v1/artists/recommended?limit=${limit}`, { session });
 }
 
 export async function getTrendingContent(limit = 10): Promise<TrendingContentItem[]> {

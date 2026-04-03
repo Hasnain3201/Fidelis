@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
+
 
 # ---------------------------------------------------------------------------
 # Artist profile
@@ -22,6 +23,13 @@ class ArtistProfileRead(BaseModel):
     media_url: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+class ArtistSearchResponse(BaseModel):
+    items: list[ArtistProfileRead]
+    page: int
+    limit: int
+    total: int
 
 
 class ArtistProfileUpdate(BaseModel):
