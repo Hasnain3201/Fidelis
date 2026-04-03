@@ -400,6 +400,28 @@ export async function searchVenuesWithFilters(
   return (await response.json()) as VenueSearchResponse;
 }
 
+export async function getPopularVenues(limit = 20): Promise<VenueSummary[]> {
+  const url = new URL("/api/v1/venues/popular", API_BASE);
+  url.searchParams.set("limit", String(limit));
+
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(url.toString(), { cache: "no-store" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Network request failed.";
+    throw new Error(`${message} Confirm the API is running at ${API_BASE}.`);
+  }
+  if (!response.ok) throw new Error(await parseErrorMessage(response));
+  return (await response.json()) as VenueSummary[];
+}
+
+export async function getRecommendedVenues(
+  session: AuthSession,
+  limit = 20,
+): Promise<VenueSummary[]> {
+  return fetchApi<VenueSummary[]>(`/api/v1/venues/recommended?limit=${limit}`, { session });
+}
+
 export async function getMyProfile(session: AuthSession): Promise<ProfileSummary> {
   return fetchApi<ProfileSummary>("/api/v1/profiles/me", { session });
 }
