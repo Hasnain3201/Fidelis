@@ -3,7 +3,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.core.auth import AuthContext, require_managed_venue, require_role
+from app.core.auth import AuthContext, require_managed_venue, require_role, require_user_id
 from app.db.supabase import get_supabase_client, get_supabase_client_for_user
 from app.db.supabase_admin import get_supabase_admin_client
 
@@ -106,6 +106,37 @@ def search_venues(
         limit=limit,
         total=total,
     )
+
+@router.get("/popular", response_model=list[VenueProfileRead])
+def get_popular_venues(limit: int = Query(20, ge=1, le=100)):
+    client = _get_supabase_client_or_503()
+    try:
+        response = client.rpc("get_popular_venues", {"limit_count": limit}).execute()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to load popular venues",
+        )
+    return response.data or []
+
+
+@router.get("/recommended", response_model=list[VenueProfileRead])
+def get_recommended_venues(
+    user_id: str = Depends(require_user_id),
+    limit: int = Query(20, ge=1, le=100),
+):
+    client = _get_supabase_client_or_503()
+    try:
+        response = client.rpc(
+            "get_recommended_venues",
+            {"for_user": user_id, "limit_count": limit},
+        ).execute()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to load recommended venues",
+        )
+    return response.data or []
 
 
 @router.get("/mine", response_model=VenueProfileRead)
