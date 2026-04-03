@@ -4,13 +4,10 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { VenueCard, type VenueCardItem } from "@/components/showcase-cards";
 import { Input } from "@/components/ui/input";
 import { getStoredAuthSession } from "@/lib/auth";
-import {
-  listVenueFollows,
-  listVenues,
-  searchVenuesWithFilters,
-  type VenueSummary,
-} from "@/lib/api";
 import { isValidZipCode, normalizeZipInput, toZip5 } from "@/lib/zip";
+import type { VenueSummary } from "@/lib/api";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const VENUE_CARD_IMAGES = [
   "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=80",
@@ -21,8 +18,16 @@ const VENUE_CARD_IMAGES = [
 
 const RECOMMENDED_PAGE_SIZE = 5;
 const SEARCH_PAGE_SIZE = 6;
+const RECOMMENDED_LIMIT = 60;
 
 type RecommendedSource = "recommended" | "popular";
+
+type VenueSearchResponse = {
+  items: VenueSummary[];
+  page: number;
+  limit: number;
+  total: number;
+};
 
 function pickImage(venueId: string): string {
   let hash = 0;
@@ -33,6 +38,7 @@ function pickImage(venueId: string): string {
 function mapVenueToCard(venue: VenueSummary): VenueCardItem {
   const cityState = [venue.city, venue.state].filter(Boolean).join(", ");
   const location = cityState || venue.zip_code;
+
   return {
     id: venue.id,
     name: venue.name,
@@ -45,15 +51,77 @@ function mapVenueToCard(venue: VenueSummary): VenueCardItem {
   };
 }
 
-function buildCombinedVenueQuery(searchText: string, venueText: string): string {
-  return [searchText.trim(), venueText.trim()].filter(Boolean).join(" ").trim();
+async function parseErrorMessage(response: Response): Promise<string> {
+  const text = await response.text();
+  if (!text) return `Request failed (${response.status})`;
+
+  try {
+    const parsed = JSON.parse(text) as {
+      detail?: string | { msg?: string } | Array<{ msg?: string }>;
+      message?: string;
+      error?: string;
+    };
+
+    if (typeof parsed.detail === "string") return parsed.detail;
+    if (Array.isArray(parsed.detail) && parsed.detail[0]?.msg) return parsed.detail[0].msg;
+    if (typeof parsed.message === "string") return parsed.message;
+    if (typeof parsed.error === "string") return parsed.error;
+  } catch {
+  }
+
+  return `Request failed (${response.status})`;
 }
 
-function sortVenuesForPopularity(items: VenueSummary[]): VenueSummary[] {
-  return [...items].sort((a, b) => {
-    if (a.verified !== b.verified) return Number(b.verified) - Number(a.verified);
-    return a.name.localeCompare(b.name);
+async function fetchPopularVenues(limit = RECOMMENDED_LIMIT): Promise<VenueSummary[]> {
+  const url = new URL("/api/v1/venues/popular", API_BASE);
+  url.searchParams.set("limit", String(limit));
+
+  const response = await fetch(url.toString(), { cache: "no-store" });
+  if (!response.ok) throw new Error(await parseErrorMessage(response));
+  return (await response.json()) as VenueSummary[];
+}
+
+async function fetchRecommendedVenues(accessToken: string, limit = RECOMMENDED_LIMIT): Promise<VenueSummary[]> {
+  const url = new URL("/api/v1/venues/recommended", API_BASE);
+  url.searchParams.set("limit", String(limit));
+
+  const response = await fetch(url.toString(), {
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
   });
+
+  if (!response.ok) throw new Error(await parseErrorMessage(response));
+  return (await response.json()) as VenueSummary[];
+}
+
+async function searchVenues(params: {
+  query?: string;
+  city?: string;
+  state?: string;
+  zip_code?: string;
+  verified?: boolean;
+  page: number;
+  limit: number;
+}): Promise<VenueSearchResponse> {
+  const url = new URL("/api/v1/venues/search", API_BASE);
+
+  if (params.query?.trim()) url.searchParams.set("query", params.query.trim());
+  if (params.city?.trim()) url.searchParams.set("city", params.city.trim());
+  if (params.state?.trim()) url.searchParams.set("state", params.state.trim().toUpperCase());
+  if (params.zip_code?.trim()) url.searchParams.set("zip_code", params.zip_code.trim());
+  if (typeof params.verified === "boolean") url.searchParams.set("verified", String(params.verified));
+  if (params.page > 1) url.searchParams.set("page", String(params.page));
+  url.searchParams.set("limit", String(params.limit));
+
+  const response = await fetch(url.toString(), { cache: "no-store" });
+  if (!response.ok) throw new Error(await parseErrorMessage(response));
+  return (await response.json()) as VenueSearchResponse;
+}
+
+function buildCombinedVenueQuery(searchText: string, venueText: string): string {
+  return [searchText.trim(), venueText.trim()].filter(Boolean).join(" ").trim();
 }
 
 export default function VenuesPage() {
@@ -71,7 +139,7 @@ export default function VenuesPage() {
   const [stateCode, setStateCode] = useState("");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
 
-  // Search result state
+  // Search results
   const [hasSearched, setHasSearched] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [zipError, setZipError] = useState("");
@@ -97,33 +165,29 @@ export default function VenuesPage() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadRecommendedShelf() {
+    async function loadShelf() {
       try {
-        const allVenuesRaw = await listVenues({ limit: 200 });
-        const allVenues = sortVenuesForPopularity(allVenuesRaw);
-
         const session = getStoredAuthSession();
-        if (session) {
-          try {
-            const follows = await listVenueFollows(session);
-            const followedIds = new Set(follows.map((f) => f.venue_id));
-            const followedVenues = allVenues.filter((venue) => followedIds.has(venue.id));
 
-            if (!cancelled && followedVenues.length > 0) {
+        if (session?.accessToken) {
+          try {
+            const rec = await fetchRecommendedVenues(session.accessToken, RECOMMENDED_LIMIT);
+            if (!cancelled && rec.length > 0) {
               setRecommendedSource("recommended");
-              setRecommendedItems(followedVenues.map(mapVenueToCard));
+              setRecommendedItems(rec.map(mapVenueToCard));
               setRecommendedMessage("");
               return;
             }
           } catch {
-            // Soft-fail to popular venues.
           }
         }
 
+        const popular = await fetchPopularVenues(RECOMMENDED_LIMIT);
         if (cancelled) return;
+
         setRecommendedSource("popular");
-        setRecommendedItems(allVenues.map(mapVenueToCard));
-        setRecommendedMessage(allVenues.length ? "" : "No venues available yet.");
+        setRecommendedItems(popular.map(mapVenueToCard));
+        setRecommendedMessage(popular.length ? "" : "No venues available yet.");
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : "Unable to load venues.";
@@ -133,7 +197,8 @@ export default function VenuesPage() {
       }
     }
 
-    void loadRecommendedShelf();
+    void loadShelf();
+
     return () => {
       cancelled = true;
     };
@@ -146,8 +211,10 @@ export default function VenuesPage() {
     setCity("");
     setStateCode("");
     setVerifiedOnly(false);
+
     setZipError("");
     setStatusMessage("");
+
     setHasSearched(false);
     setCurrentPage(1);
     setTotalResults(0);
@@ -193,7 +260,7 @@ export default function VenuesPage() {
     setStatusMessage("");
 
     try {
-      const response = await searchVenuesWithFilters({
+      const response = await searchVenues({
         query: buildCombinedVenueQuery(searchText, venueText) || undefined,
         city: city.trim() || undefined,
         state: stateCode.trim() ? stateCode.trim().toUpperCase() : undefined,
@@ -236,6 +303,7 @@ export default function VenuesPage() {
               <h2 className="shelfTitle">
                 {recommendedSource === "recommended" ? "Recommended Venues" : "Popular Venues"}
               </h2>
+
               <div className="shelfPager">
                 <button
                   type="button"
@@ -277,7 +345,6 @@ export default function VenuesPage() {
             <div className="shelfHeading">
               <h2 className="shelfTitle">Find Your Own Venues!</h2>
             </div>
-            <p className="shelfHint">Use filters on the left, then search to see matching venues.</p>
 
             <div className="discoveryLayout">
               <aside className="filterPanel searchFilterPanel" aria-busy={isSearching}>
@@ -330,10 +397,7 @@ export default function VenuesPage() {
                         value={stateCode}
                         onChange={(event) =>
                           setStateCode(
-                            event.target.value
-                              .replace(/[^a-zA-Z]/g, "")
-                              .toUpperCase()
-                              .slice(0, 2),
+                            event.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 2),
                           )
                         }
                         placeholder="State"
@@ -372,7 +436,7 @@ export default function VenuesPage() {
                       <input
                         type="checkbox"
                         checked={verifiedOnly}
-                        onChange={() => setVerifiedOnly((v) => !v)}
+                        onChange={() => setVerifiedOnly((value) => !value)}
                         disabled={isSearching}
                       />
                       Verified venues only
@@ -403,7 +467,7 @@ export default function VenuesPage() {
                       <div className="emptyStateCard" style={{ marginTop: 12 }}>
                         <h3 style={{ margin: 0 }}>No venues matched your search</h3>
                         <p className="meta" style={{ margin: 0 }}>
-                          Try broadening location or removing filters.
+                          Try broadening location or turning off verified-only.
                         </p>
                       </div>
                     ) : null}
