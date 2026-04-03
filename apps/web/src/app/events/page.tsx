@@ -1,17 +1,14 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import { FilterBar } from "@/components/filter-bar";
-import { FilterSidebar } from "@/components/filter-sidebar";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { EventShowcaseCard, type EventCardItem } from "@/components/showcase-cards";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { searchEvents, type EventSummary } from "@/lib/api";
-import { isValidZipCode, normalizeZipInput, zipMatchesEvent } from "@/lib/zip";
+import { getStoredAuthSession } from "@/lib/auth";
+import { searchEventsWithFilters, type EventSummary } from "@/lib/api";
+import { isValidZipCode, normalizeZipInput, toZip5 } from "@/lib/zip";
 
-const QUICK_FILTERS = ["This Weekend", "Free Events", "Live Music", "Comedy Shows", "DJ Sets"];
-const DEFAULT_DISCOVERY_ZIP = "10001";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
 const EVENT_CARD_IMAGES = [
   "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=900&q=80",
   "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=900&q=80",
@@ -19,14 +16,28 @@ const EVENT_CARD_IMAGES = [
   "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=900&q=80",
 ];
 
-function matchesQuickFilter(price: string, tags: string[], subtitle: string, activeQuick: string): boolean {
-  if (activeQuick === "This Weekend") return true;
-  if (activeQuick === "Free Events") return price.toLowerCase().includes("free") || price.includes("$0");
-  if (activeQuick === "Live Music") return tags.some((tag) => tag.toLowerCase().includes("live"));
-  if (activeQuick === "Comedy Shows") return subtitle.toLowerCase().includes("comedy");
-  if (activeQuick === "DJ Sets") return subtitle.toLowerCase().includes("dj");
-  return true;
-}
+const RECOMMENDED_PAGE_SIZE = 5;
+const SEARCH_PAGE_SIZE = 6;
+
+const CATEGORY_OPTIONS = [
+  "Live Music",
+  "Concert",
+  "Comedy",
+  "DJ Set",
+  "Acoustic",
+  "Electronic",
+];
+
+const CATEGORY_TOKEN_MAP: Record<string, string[]> = {
+  "Live Music": ["music", "live-music"],
+  Concert: ["concert", "music"],
+  Comedy: ["comedy", "comedy-show"],
+  "DJ Set": ["dj-set", "dj", "electronic", "music"],
+  Acoustic: ["acoustic", "music"],
+  Electronic: ["electronic", "dj-set", "music"],
+};
+
+type RecommendedSource = "recommended" | "trending";
 
 function formatDateLabel(value: string): string {
   const date = new Date(value);
@@ -64,7 +75,7 @@ function mapSummaryToCardItem(item: EventSummary, index: number): EventCardItem 
     dateLabel: formatDateLabel(item.start_time),
     timeLabel: formatTimeLabel(item.start_time),
     zipCode: item.zip_code,
-    location: `${item.zip_code}`,
+    location: item.zip_code,
     venue: item.venue_name,
     price: "TBD",
     image: EVENT_CARD_IMAGES[index % EVENT_CARD_IMAGES.length],
@@ -72,196 +83,496 @@ function mapSummaryToCardItem(item: EventSummary, index: number): EventCardItem 
   };
 }
 
-export default function HomePage() {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [searchText, setSearchText] = useState("");
+function buildApiCategories(selected: string[]): string[] {
+  const out = new Set<string>();
+  for (const label of selected) {
+    for (const token of CATEGORY_TOKEN_MAP[label] ?? []) out.add(token);
+  }
+  return [...out];
+}
+
+function toStartIso(dateValue: string): string | undefined {
+  if (!dateValue) return undefined;
+  return `${dateValue}T00:00:00.000Z`;
+}
+
+function toEndIso(dateValue: string): string | undefined {
+  if (!dateValue) return undefined;
+  return `${dateValue}T23:59:59.999Z`;
+}
+
+async function readErrorMessage(response: Response): Promise<string> {
+  const text = await response.text();
+  if (!text) return `Request failed (${response.status})`;
+  try {
+    const parsed = JSON.parse(text) as { detail?: string; message?: string; error?: string };
+    return parsed.detail || parsed.message || parsed.error || `Request failed (${response.status})`;
+  } catch {
+    return `Request failed (${response.status})`;
+  }
+}
+
+async function fetchEventList(path: string, accessToken?: string): Promise<EventSummary[]> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "GET",
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+
+  return (await response.json()) as EventSummary[];
+}
+
+export default function EventsSearchPage() {
+  // Recommended shelf
+  const [recommendedItems, setRecommendedItems] = useState<EventCardItem[]>([]);
+  const [recommendedMessage, setRecommendedMessage] = useState("");
+  const [recommendedSource, setRecommendedSource] = useState<RecommendedSource>("trending");
+  const [recommendedPage, setRecommendedPage] = useState(0);
+
+  // Search filters
+  const [query, setQuery] = useState("");
+  const [venueQuery, setVenueQuery] = useState("");
   const [zipCode, setZipCode] = useState("");
+  const [city, setCity] = useState("");
+  const [stateCode, setStateCode] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+
+  // Search results
+  const [hasSearched, setHasSearched] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [zipError, setZipError] = useState("");
-  const [activeQuick, setActiveQuick] = useState(QUICK_FILTERS[0]);
-  const [eventItems, setEventItems] = useState<EventCardItem[]>([]);
-  const [cardsMessage, setCardsMessage] = useState("");
+  const [dateError, setDateError] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
+  const [searchResults, setSearchResults] = useState<EventCardItem[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalResults, setTotalResults] = useState(0);
+
+  const recommendedLastPage = Math.max(
+    0,
+    Math.ceil(recommendedItems.length / RECOMMENDED_PAGE_SIZE) - 1,
+  );
+
+  const recommendedPageItems = useMemo(() => {
+    const start = recommendedPage * RECOMMENDED_PAGE_SIZE;
+    return recommendedItems.slice(start, start + RECOMMENDED_PAGE_SIZE);
+  }, [recommendedItems, recommendedPage]);
+
+  useEffect(() => {
+    setRecommendedPage((page) => Math.min(page, recommendedLastPage));
+  }, [recommendedLastPage]);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadEventCardsFromApi() {
+    async function loadRecommendedShelf() {
       try {
-        const response = await searchEvents(DEFAULT_DISCOVERY_ZIP);
-        if (cancelled) return;
+        const session = getStoredAuthSession();
+        let source: RecommendedSource = "trending";
+        let items: EventSummary[] = [];
 
-        if (response.items.length > 0) {
-          setEventItems(response.items.map(mapSummaryToCardItem));
-          setCardsMessage("Live event cards loaded from backend.");
-          return;
+        if (session?.accessToken) {
+          try {
+            items = await fetchEventList("/api/v1/events/recommended", session.accessToken);
+            source = "recommended";
+          } catch {
+            items = [];
+          }
         }
 
-        setEventItems([]);
-        setCardsMessage("No events available yet in the database.");
+        if (items.length === 0) {
+          items = await fetchEventList("/api/v1/events/trending");
+          source = "trending";
+        }
+
+        if (cancelled) return;
+
+        setRecommendedSource(source);
+        setRecommendedItems(items.map(mapSummaryToCardItem));
+        setRecommendedMessage(items.length ? "" : "No events available yet.");
       } catch (error) {
         if (cancelled) return;
-        setEventItems([]);
         const message = error instanceof Error ? error.message : "Unable to load events.";
-        setCardsMessage(`Live event cards unavailable (${message}).`);
+        setRecommendedItems([]);
+        setRecommendedSource("trending");
+        setRecommendedMessage(`Recommended events unavailable (${message}).`);
       }
     }
 
-    void loadEventCardsFromApi();
+    void loadRecommendedShelf();
+
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const featuredEvents = eventItems.slice(0, 4);
-
-  const visibleEvents = useMemo(() => {
-    const search = searchText.trim().toLowerCase();
-
-    return eventItems.filter((event) => {
-      const searchMatch =
-        !search ||
-        event.title.toLowerCase().includes(search) ||
-        event.description.toLowerCase().includes(search) ||
-        event.venue.toLowerCase().includes(search);
-
-      const quickMatch = matchesQuickFilter(event.price, event.tags, event.subtitle, activeQuick);
-      const zipMatch = zipMatchesEvent(zipCode, event.zipCode);
-
-      return searchMatch && zipMatch && quickMatch;
-    });
-  }, [activeQuick, eventItems, searchText, zipCode]);
-
-  function validateZipInput(value: string): string {
-    if (!value.trim()) return "ZIP code is required to search.";
-    if (!isValidZipCode(value)) return "Use a valid US ZIP code (e.g., 78701 or 78701-1234).";
-    return "";
+  function toggleCategory(label: string) {
+    setSelectedCategories((prev) =>
+      prev.includes(label) ? prev.filter((item) => item !== label) : [...prev, label],
+    );
   }
 
-  function openSearchResults(event?: FormEvent<HTMLFormElement>) {
-    event?.preventDefault();
-    const zipValidationMessage = validateZipInput(zipCode);
-    if (zipValidationMessage) {
-      setZipError(zipValidationMessage);
+  function resetFilters() {
+    setQuery("");
+    setVenueQuery("");
+    setZipCode("");
+    setCity("");
+    setStateCode("");
+    setStartDate("");
+    setEndDate("");
+    setSelectedCategories([]);
+    setZipError("");
+    setDateError("");
+    setStatusMessage("");
+    setHasSearched(false);
+    setSearchResults([]);
+    setCurrentPage(1);
+    setTotalResults(0);
+  }
+
+  function validateInputs(): boolean {
+    if (zipCode.trim() && !isValidZipCode(zipCode.trim())) {
+      setZipError("Use ZIP format 12345 or 12345-6789.");
+      return false;
+    }
+    setZipError("");
+
+    if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+      setDateError("Start date must be before end date.");
+      return false;
+    }
+    setDateError("");
+
+    if (stateCode.trim() && stateCode.trim().length !== 2) {
+      setStatusMessage("State should be a 2-letter code (e.g., NJ, NY, CA).");
+      return false;
+    }
+
+    return true;
+  }
+
+  async function runSearch(nextPage: number) {
+    const hasAnyInput =
+      query.trim() ||
+      venueQuery.trim() ||
+      zipCode.trim() ||
+      city.trim() ||
+      stateCode.trim() ||
+      startDate ||
+      endDate ||
+      selectedCategories.length > 0;
+
+    if (!hasAnyInput) {
+      setHasSearched(false);
+      setSearchResults([]);
+      setCurrentPage(1);
+      setTotalResults(0);
+      setStatusMessage("");
       return;
     }
 
-    const normalizedQuery = searchText.trim().replace(/\s+/g, " ").slice(0, 120);
-    const params = new URLSearchParams();
-    if (normalizedQuery) params.set("query", normalizedQuery);
-    params.set("zip", zipCode);
+    if (!validateInputs()) return;
 
-    startTransition(() => {
-      router.push(`/search?${params.toString()}`);
-    });
+    setIsSearching(true);
+    setStatusMessage("");
+
+    try {
+      const response = await searchEventsWithFilters({
+        query: query.trim() || undefined,
+        venue: venueQuery.trim() || undefined,
+        zip: zipCode.trim() ? toZip5(zipCode) : undefined,
+        city: city.trim() || undefined,
+        state: stateCode.trim() ? stateCode.trim().toUpperCase() : undefined,
+        categories: buildApiCategories(selectedCategories),
+        startAfter: toStartIso(startDate),
+        startBefore: toEndIso(endDate),
+        sort: "recommended",
+        page: nextPage,
+        limit: SEARCH_PAGE_SIZE,
+      });
+
+      setHasSearched(true);
+      setCurrentPage(nextPage);
+      setTotalResults(response.total);
+      setSearchResults(
+        response.items.map((item, idx) =>
+          mapSummaryToCardItem(item, (nextPage - 1) * SEARCH_PAGE_SIZE + idx),
+        ),
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Search is temporarily unavailable.";
+      setHasSearched(true);
+      setCurrentPage(1);
+      setTotalResults(0);
+      setSearchResults([]);
+      setStatusMessage(`Search unavailable (${message}).`);
+    } finally {
+      setIsSearching(false);
+    }
   }
+
+  function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void runSearch(1);
+  }
+
+  const totalPages = Math.max(1, Math.ceil(totalResults / SEARCH_PAGE_SIZE));
 
   return (
     <>
-      <section className="heroBand">
-        <div className="siteContainer heroContent">
-          <div className="heroBadge">Discover local events in your area</div>
-
-          <h1 className="heroTitle">
-            Find Your Next
-            <span> Unforgettable Experience</span>
-          </h1>
-
-          <p className="heroCopy">
-            Connect with local venues, discover amazing artists, and never miss a show. Your community&apos;s
-            entertainment scene, all in one place.
-          </p>
-
-          <form className="heroSearchForm" onSubmit={openSearchResults} noValidate>
-            <div className="heroSearchRow">
-              <Input
-                value={searchText}
-                onChange={(event) => setSearchText(event.target.value)}
-                placeholder="Search events, artists, venues"
-                maxLength={120}
-                aria-label="Search term"
-              />
-              <Input
-                value={zipCode}
-                onChange={(event) => {
-                  const nextZip = normalizeZipInput(event.target.value);
-                  setZipCode(nextZip);
-                  if (zipError) {
-                    setZipError(validateZipInput(nextZip));
+      <section className="siteSection fullWidthSection">
+        <div className="fullWidthInner">
+          <div className="shelfWrap">
+            <div className="shelfHeading">
+              <h2 className="shelfTitle">
+                {recommendedSource === "recommended" ? "Recommended Events For You" : "Trending Events"}
+              </h2>
+              <div className="shelfPager">
+                <button
+                  type="button"
+                  className="shelfPagerBtn"
+                  aria-label="Previous recommended events"
+                  onClick={() => setRecommendedPage((page) => Math.max(0, page - 1))}
+                  disabled={recommendedPage === 0}
+                >
+                  ←
+                </button>
+                <button
+                  type="button"
+                  className="shelfPagerBtn"
+                  aria-label="Next recommended events"
+                  onClick={() =>
+                    setRecommendedPage((page) => Math.min(recommendedLastPage, page + 1))
                   }
-                }}
-                onBlur={() => setZipError(validateZipInput(zipCode))}
-                placeholder="ZIP code"
-                inputMode="numeric"
-                autoComplete="postal-code"
-                maxLength={10}
-                aria-label="ZIP code"
-                aria-invalid={Boolean(zipError)}
-              />
-              <Button type="submit" className="heroSearchBtn" disabled={isPending}>
-                {isPending ? "Searching..." : "Search"}
-              </Button>
+                  disabled={recommendedPage >= recommendedLastPage}
+                >
+                  →
+                </button>
+              </div>
             </div>
-            {zipError ? (
-              <p className="fieldError" role="alert">
-                {zipError}
-              </p>
-            ) : null}
-          </form>
 
-          <FilterBar items={QUICK_FILTERS} activeItem={activeQuick} onSelect={setActiveQuick} />
+            {recommendedMessage ? <p className="meta">{recommendedMessage}</p> : null}
 
-          <div className="heroStats">
-            <div className="heroStat">
-              <strong>500+</strong>
-              <span>Events Monthly</span>
-            </div>
-            <div className="heroStat">
-              <strong>200+</strong>
-              <span>Local Venues</span>
-            </div>
-            <div className="heroStat">
-              <strong>1,000+</strong>
-              <span>Artists</span>
+            <div className="cardsGrid five">
+              {recommendedPageItems.map((item) => (
+                <EventShowcaseCard key={`recommended-${item.id}`} item={item} />
+              ))}
             </div>
           </div>
         </div>
       </section>
 
-      <section className="siteSection">
-        <div className="siteContainer">
-          <div className="sectionHeader">
-            <div>
-              <h2>Featured Events</h2>
-              <p>Hand-picked experiences you&apos;ll love</p>
-            </div>
-            <a className="sectionLink" href="/search">
-              View All
-            </a>
+      <section className="siteSection fullWidthSection" style={{ paddingTop: 0 }}>
+        <div className="fullWidthInner">
+          <div className="shelfHeading">
+            <h2 className="shelfTitle">Find Your Own Events!</h2>
           </div>
-          {cardsMessage ? <p className="meta">{cardsMessage}</p> : null}
-
-          <div className="cardsGrid four">
-            {featuredEvents.map((item) => (
-              <EventShowcaseCard key={item.id} item={item} />
-            ))}
-          </div>
-
           <div className="discoveryLayout">
-            <FilterSidebar />
+            <aside className="filterPanel searchFilterPanel" aria-busy={isSearching}>
+              <form onSubmit={onSubmit} noValidate>
+                <div className="searchFilterHeader">
+                  <h2>Search Filters</h2>
+                  <button
+                    type="button"
+                    className="textResetBtn"
+                    onClick={resetFilters}
+                    disabled={isSearching}
+                  >
+                    Reset
+                  </button>
+                </div>
+
+                <label className="filterField">
+                  <span>Search</span>
+                  <Input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value.slice(0, 120))}
+                    placeholder="Artist, event title, keyword..."
+                    maxLength={120}
+                    disabled={isSearching}
+                  />
+                </label>
+
+                <label className="filterField">
+                  <span>Venue</span>
+                  <Input
+                    value={venueQuery}
+                    onChange={(e) => setVenueQuery(e.target.value.slice(0, 100))}
+                    placeholder="Venue name"
+                    maxLength={100}
+                    disabled={isSearching}
+                  />
+                </label>
+
+                <div className="filterField">
+                  <span>Location</span>
+                  <div className="inlineFields threeCol">
+                    <Input
+                      value={city}
+                      onChange={(e) => setCity(e.target.value.slice(0, 60))}
+                      placeholder="City"
+                      maxLength={60}
+                      disabled={isSearching}
+                    />
+                    <Input
+                      value={stateCode}
+                      onChange={(e) =>
+                        setStateCode(
+                          e.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 2),
+                        )
+                      }
+                      placeholder="State"
+                      maxLength={2}
+                      disabled={isSearching}
+                    />
+                    <Input
+                      value={zipCode}
+                      onChange={(e) => setZipCode(normalizeZipInput(e.target.value))}
+                      onBlur={() =>
+                        setZipError(
+                          zipCode.trim() && !isValidZipCode(zipCode)
+                            ? "Use ZIP format 12345 or 12345-6789."
+                            : "",
+                        )
+                      }
+                      placeholder="ZIP"
+                      inputMode="numeric"
+                      maxLength={10}
+                      disabled={isSearching}
+                      aria-invalid={Boolean(zipError)}
+                    />
+                  </div>
+                </div>
+
+                {zipError ? (
+                  <p className="fieldError" role="alert" style={{ marginBottom: 10 }}>
+                    {zipError}
+                  </p>
+                ) : null}
+
+                <div className="filterField">
+                  <span>Start & End Date</span>
+                  <div className="inlineFields twoCol">
+                    <Input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      disabled={isSearching}
+                    />
+                    <Input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      disabled={isSearching}
+                    />
+                  </div>
+                </div>
+
+                {dateError ? (
+                  <p className="fieldError" role="alert" style={{ marginBottom: 10 }}>
+                    {dateError}
+                  </p>
+                ) : null}
+
+                <div className="filterField">
+                  <span>Categories</span>
+                  <div className="checkboxGrid">
+                    {CATEGORY_OPTIONS.map((label) => {
+                      const checked = selectedCategories.includes(label);
+                      return (
+                        <label key={label} className="checkItem">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleCategory(label)}
+                            disabled={isSearching}
+                          />
+                          {label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="pageActions" style={{ marginTop: 12, marginBottom: 0 }}>
+                  <button type="submit" className="pageActionLink" disabled={isSearching}>
+                    {isSearching ? "Searching..." : "Search"}
+                  </button>
+                </div>
+              </form>
+            </aside>
 
             <div>
-              <div className="sectionHeader listHeader">
-                <div>
-                  <h2>All Events</h2>
-                  <p>{visibleEvents.length} events found</p>
-                </div>
-              </div>
+              {hasSearched ? (
+                <>
+                  <div className="sectionHeader listHeader">
+                    <div>
+                      <h2>Search Results</h2>
+                      <p>{isSearching ? "Updating results..." : `${totalResults} events found`}</p>
+                    </div>
+                  </div>
 
-              <div className="cardsGrid eventsDense">
-                {visibleEvents.map((item) => (
-                  <EventShowcaseCard key={item.id} item={item} />
-                ))}
-              </div>
+                  {statusMessage ? <p className="statusBanner error">{statusMessage}</p> : null}
+
+                  {!isSearching && searchResults.length === 0 && !statusMessage ? (
+                    <div className="emptyStateCard" style={{ marginTop: 12 }}>
+                      <h3 style={{ margin: 0 }}>No events matched your search</h3>
+                      <p className="meta" style={{ margin: 0 }}>
+                        Try broadening your location/date/category filters.
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {searchResults.length > 0 ? (
+                    <>
+                      <div className="cardsGrid eventsDense" style={{ marginTop: 12 }}>
+                        {searchResults.map((item) => (
+                          <EventShowcaseCard key={item.id} item={item} />
+                        ))}
+                      </div>
+
+                      {totalPages > 1 ? (
+                        <div
+                          style={{
+                            marginTop: 16,
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            className="textResetBtn"
+                            onClick={() => void runSearch(Math.max(1, currentPage - 1))}
+                            disabled={isSearching || currentPage <= 1}
+                          >
+                            Prev
+                          </button>
+
+                          <div className="meta">
+                            Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="textResetBtn"
+                            onClick={() => void runSearch(Math.min(totalPages, currentPage + 1))}
+                            disabled={isSearching || currentPage >= totalPages}
+                          >
+                            Next
+                          </button>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+                </>
+              ) : null}
             </div>
           </div>
         </div>
