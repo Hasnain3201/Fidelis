@@ -8,7 +8,12 @@ from app.db.supabase import get_supabase_client, get_supabase_client_for_user
 from app.db.supabase_admin import get_supabase_admin_client
 
 from app.models.event_schemas import EventCreate, EventCreated, EventSummary
-from app.models.venue_schemas import VenueProfileCreate, VenueProfileRead, VenueProfileUpdate
+from app.models.venue_schemas import (
+    VenueProfileCreate,
+    VenueProfileRead,
+    VenueProfileUpdate,
+    VenueSearchResponse,
+)
 
 router = APIRouter()
 
@@ -54,6 +59,54 @@ def list_venues(
             detail="Failed to load venues",
         )
     return response.data or []
+
+
+@router.get("/search", response_model=VenueSearchResponse)
+def search_venues(
+    query: Optional[str] = Query(default=None),
+    zip_code: Optional[str] = Query(default=None, pattern=r"^\d{5}$"),
+    city: Optional[str] = Query(default=None),
+    state: Optional[str] = Query(default=None, min_length=2, max_length=2),
+    verified: Optional[bool] = Query(default=None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+):
+    client = _get_supabase_client_or_503()
+    offset = (page - 1) * limit
+
+    q = client.table("venues").select(_VENUE_COLS, count="exact")
+
+    if query and query.strip():
+        q = q.ilike("name", f"%{query.strip()}%")
+    if zip_code:
+        q = q.eq("zip_code", zip_code)
+    if city and city.strip():
+        q = q.ilike("city", f"%{city.strip()}%")
+    if state and state.strip():
+        q = q.eq("state", state.strip().upper())
+    if verified is not None:
+        q = q.eq("verified", verified)
+
+    q = q.order("verified", desc=True).order("name").range(offset, offset + limit - 1)
+
+    try:
+        response = q.execute()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to search venues",
+        )
+
+    rows = response.data or []
+    total = response.count if isinstance(response.count, int) else len(rows)
+
+    return VenueSearchResponse(
+        items=rows,
+        page=page,
+        limit=limit,
+        total=total,
+    )
+
 
 @router.get("/mine", response_model=VenueProfileRead)
 def get_my_venue(pair: tuple[AuthContext, str] = Depends(require_managed_venue)):
