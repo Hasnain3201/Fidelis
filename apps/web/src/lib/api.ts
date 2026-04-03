@@ -84,6 +84,23 @@ export type VenueSummary = {
   verified: boolean;
 };
 
+export type VenueSearchResponse = {
+  items: VenueSummary[];
+  page: number;
+  limit: number;
+  total: number;
+};
+ 
+export type VenueSearchParams = {
+  query?: string;
+  city?: string;
+  state?: string;
+  zip_code?: string;
+  verified?: boolean;
+  page?: number;
+  limit?: number;
+};
+
 export type CreateVenueEventPayload = {
   title: string;
   description: string;
@@ -354,6 +371,55 @@ export async function createVenueEvent(
     },
     body: JSON.stringify(payload),
   });
+}
+
+export async function searchVenuesWithFilters(
+  params: VenueSearchParams,
+): Promise<VenueSearchResponse> {
+  const url = new URL("/api/v1/venues/search", API_BASE);
+ 
+  if (params.query?.trim()) url.searchParams.set("query", params.query.trim());
+  if (params.city?.trim()) url.searchParams.set("city", params.city.trim());
+  if (params.state?.trim()) url.searchParams.set("state", params.state.trim().toUpperCase());
+  if (params.zip_code?.trim()) url.searchParams.set("zip_code", params.zip_code.trim());
+  if (typeof params.verified === "boolean") {
+    url.searchParams.set("verified", String(params.verified));
+  }
+  if (params.page && params.page > 1) url.searchParams.set("page", String(params.page));
+  if (params.limit) url.searchParams.set("limit", String(params.limit));
+ 
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(url.toString(), { cache: "no-store" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Network request failed.";
+    throw new Error(`${message} Confirm the API is running at ${API_BASE}.`);
+  }
+ 
+  if (!response.ok) throw new Error(await parseErrorMessage(response));
+  return (await response.json()) as VenueSearchResponse;
+}
+
+export async function getPopularVenues(limit = 20): Promise<VenueSummary[]> {
+  const url = new URL("/api/v1/venues/popular", API_BASE);
+  url.searchParams.set("limit", String(limit));
+
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(url.toString(), { cache: "no-store" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Network request failed.";
+    throw new Error(`${message} Confirm the API is running at ${API_BASE}.`);
+  }
+  if (!response.ok) throw new Error(await parseErrorMessage(response));
+  return (await response.json()) as VenueSummary[];
+}
+
+export async function getRecommendedVenues(
+  session: AuthSession,
+  limit = 20,
+): Promise<VenueSummary[]> {
+  return fetchApi<VenueSummary[]>(`/api/v1/venues/recommended?limit=${limit}`, { session });
 }
 
 export async function getMyProfile(session: AuthSession): Promise<ProfileSummary> {

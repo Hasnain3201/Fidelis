@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
+
 
 # ---------------------------------------------------------------------------
 # Venue profile
@@ -27,6 +28,13 @@ class VenueProfileRead(BaseModel):
     verified: bool = False
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+class VenueSearchResponse(BaseModel):
+    items: list[VenueProfileRead]
+    page: int
+    limit: int
+    total: int
 
 
 class VenueProfileUpdate(BaseModel):
