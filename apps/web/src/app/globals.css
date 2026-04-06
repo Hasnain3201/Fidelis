@@ -1178,6 +1178,39 @@ a {
   gap: 12px;
 }
 
+.authPrefGroup {
+  margin: 2px 0;
+  padding: 10px;
+  border: 1px solid #dce3f2;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fcfdff 0%, #f7f9ff 100%);
+  display: grid;
+  gap: 8px;
+}
+
+.authPrefLegend {
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #586280;
+}
+
+.authPrefHint {
+  margin: 0;
+  font-size: 12px;
+  color: #6d7792;
+}
+
+.authPrefGroup .checkItem {
+  align-items: flex-start;
+  min-height: 0;
+  padding: 6px 4px;
+}
+
+.authPrefGroup .checkItem input[type="checkbox"] {
+  margin-top: 2px;
+}
+
 .authSwitch {
   margin-top: 14px;
   font-size: 14px;

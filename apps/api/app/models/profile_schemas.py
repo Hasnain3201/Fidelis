@@ -16,6 +16,8 @@ class ProfileSummary(BaseModel):
     home_zip: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
+    email_opt_in: bool = False
+    sms_opt_in: bool = False
 
     created_at: datetime
     updated_at: datetime
@@ -27,3 +29,5 @@ class UpdateProfileResponse(BaseModel):
     home_zip: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
+    email_opt_in: Optional[bool] = None
+    sms_opt_in: Optional[bool] = None

@@ -16,6 +16,8 @@ class SignupRequest(BaseModel):
     password: str
     full_name: Optional[str] = None
     role: str = "user"
+    email_opt_in: bool = False
+    sms_opt_in: bool = False
 
 
 @router.get("/me")
@@ -93,6 +95,8 @@ def signup(payload: SignupRequest):
                 "role": payload.role,
                 "display_name": payload.full_name or "",
                 "home_zip": None,
+                "email_opt_in": payload.email_opt_in,
+                "sms_opt_in": payload.sms_opt_in,
             },
             on_conflict="id",
         ).execute()

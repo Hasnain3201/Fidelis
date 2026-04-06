@@ -33,6 +33,11 @@ type SignUpResult = {
   requiresEmailVerification: boolean;
 };
 
+export type SignUpCommunicationPreferences = {
+  emailOptIn: boolean;
+  smsOptIn: boolean;
+};
+
 const AUTH_STORAGE_KEY = "livey.auth.session.v1";
 const AUTH_CHANGE_EVENT = "livey-auth-changed";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -224,6 +229,7 @@ export async function signUpWithSupabase(
   email: string,
   password: string,
   requestedRole: UserRole,
+  communicationPreferences: SignUpCommunicationPreferences,
 ): Promise<SignUpResult> {
   const response = await fetch(`${API_BASE}/api/v1/auth/signup`, {
     method: "POST",
@@ -233,6 +239,8 @@ export async function signUpWithSupabase(
       password,
       full_name: fullName,
       role: requestedRole,
+      email_opt_in: communicationPreferences.emailOptIn,
+      sms_opt_in: communicationPreferences.smsOptIn,
     }),
   });
 

@@ -138,6 +138,8 @@ export type ProfileSummary = {
   home_zip?: string | null;
   city?: string | null;
   state?: string | null;
+  email_opt_in?: boolean;
+  sms_opt_in?: boolean;
 };
 
 export type FavoriteItem = {

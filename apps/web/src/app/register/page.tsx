@@ -35,6 +35,8 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [role, setRole] = useState<AccountRole>("user");
+  const [emailOptIn, setEmailOptIn] = useState(false);
+  const [smsOptIn, setSmsOptIn] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -73,7 +75,10 @@ export default function RegisterPage() {
 
     try {
       setIsSubmitting(true);
-      await signUpWithSupabase(fullName.trim(), email.trim().toLowerCase(), password, role);
+      await signUpWithSupabase(fullName.trim(), email.trim().toLowerCase(), password, role, {
+        emailOptIn,
+        smsOptIn,
+      });
 
       setPassword("");
       setConfirmPassword("");
@@ -222,6 +227,21 @@ export default function RegisterPage() {
                 <option value="venue">Venue</option>
               </select>
             </label>
+
+            <fieldset className="authPrefGroup">
+              <legend className="authPrefLegend">Messaging Preferences (Optional)</legend>
+              <p className="authPrefHint">Choose how you want updates from LIVEY.</p>
+
+              <label className="checkItem">
+                <input type="checkbox" checked={emailOptIn} onChange={(event) => setEmailOptIn(event.target.checked)} />
+                Email me about new events, giveaways, and feature updates.
+              </label>
+
+              <label className="checkItem">
+                <input type="checkbox" checked={smsOptIn} onChange={(event) => setSmsOptIn(event.target.checked)} />
+                Text me reminders and important event updates.
+              </label>
+            </fieldset>
 
             <label className="checkItem legalCheck">
               <input
