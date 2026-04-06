@@ -31,6 +31,7 @@ const FOOTER_COLUMNS = [
       { label: "Browse Events", href: "/search" },
       { label: "Find Venues", href: "/venues" },
       { label: "Explore Artists", href: "/artists" },
+      { label: "Giveaway", href: "/giveaway" },
       { label: "This Weekend", href: "/search?date=weekend" },
       { label: "Free Events", href: "/search?query=free" },
       { label: "Fundraisers", href: "/search?query=fundraiser" },

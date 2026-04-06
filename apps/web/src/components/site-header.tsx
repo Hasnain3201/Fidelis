@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: "/events", label: "Events" },
   { href: "/venues", label: "Venues" },
   { href: "/artists", label: "Artists" },
+  { href: "/giveaway", label: "Giveaway" },
 ];
 
 function getDashboardHref(session: AuthSession): string {
