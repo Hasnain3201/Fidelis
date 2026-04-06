@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { GuestAccessPanel } from "@/components/guest-access-panel";
 import { signUpWithSupabase } from "@/lib/auth";
 
 const ACCOUNT_ROLES = ["user", "artist", "venue"] as const;
@@ -107,6 +108,10 @@ export default function RegisterPage() {
         <div className="authCard">
           <h1>Create Account</h1>
           <p className="meta">Register as a user, artist, or venue owner.</p>
+
+          <GuestAccessPanel
+            description="Skip account creation for now and explore public event listings. Sign up later when you want saved features."
+          />
 
           <form className="authForm" onSubmit={handleSubmit} noValidate>
             <Input
@@ -249,6 +254,8 @@ export default function RegisterPage() {
 
           <p className="authSwitch">
             Already have an account? <Link href="/login">Sign in</Link>
+            <br />
+            Just browsing? <Link href="/search">Continue as guest</Link>
           </p>
         </div>
       </div>

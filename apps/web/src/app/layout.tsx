@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { GuestAuthNudge } from "@/components/guest-auth-nudge";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { BackToTop } from "@/components/back-to-top";
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body suppressHydrationWarning>
         <SiteHeader />
         <main>{children}</main>
+        <GuestAuthNudge />
         <SiteFooter />
         <BackToTop />
       </body>

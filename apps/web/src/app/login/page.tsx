@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { GuestAccessPanel } from "@/components/guest-access-panel";
 import { saveAuthSession, signInWithSupabase } from "@/lib/auth";
 
 function validateEmail(email: string): string {
@@ -71,6 +72,10 @@ export default function LoginPage() {
           <h1>Login</h1>
           <p className="meta">Sign in to save favorites, follow artists, and manage venue workflows.</p>
 
+          <GuestAccessPanel
+            description="Browse events, artists, and venues now. Create an account any time to save favorites and follows."
+          />
+
           <form className="authForm" onSubmit={handleSubmit} noValidate>
             <Input
               type="email"
@@ -116,7 +121,8 @@ export default function LoginPage() {
           ) : null}
 
           <p className="authSwitch">
-            New to LIVEY? <Link href="/register">Create an account</Link>
+            New to LIVEY? <Link href="/register">Create an account</Link> • Prefer to browse first?{" "}
+            <Link href="/search">Continue as guest</Link>
           </p>
         </div>
       </div>

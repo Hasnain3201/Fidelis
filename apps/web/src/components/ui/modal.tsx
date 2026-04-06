@@ -8,9 +8,29 @@ type ModalProps = {
   onClose: () => void;
   children: React.ReactNode;
   actions?: React.ReactNode;
+  backdropClassName?: string;
+  cardClassName?: string;
+  headerClassName?: string;
+  bodyClassName?: string;
+  actionsClassName?: string;
 };
 
-export function Modal({ open, title, onClose, children, actions }: ModalProps) {
+function cx(...parts: Array<string | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
+
+export function Modal({
+  open,
+  title,
+  onClose,
+  children,
+  actions,
+  backdropClassName,
+  cardClassName,
+  headerClassName,
+  bodyClassName,
+  actionsClassName,
+}: ModalProps) {
   useEffect(() => {
     if (!open) return;
 
@@ -27,16 +47,16 @@ export function Modal({ open, title, onClose, children, actions }: ModalProps) {
   if (!open) return null;
 
   return (
-    <div className="uiModalBackdrop" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="uiModalCard">
-        <div className="uiModalHeader">
+    <div className={cx("uiModalBackdrop", backdropClassName)} role="dialog" aria-modal="true" aria-label={title}>
+      <div className={cx("uiModalCard", cardClassName)}>
+        <div className={cx("uiModalHeader", headerClassName)}>
           <h3>{title}</h3>
           <button type="button" className="uiModalClose" onClick={onClose} aria-label="Close">
             ×
           </button>
         </div>
-        <div className="uiModalBody">{children}</div>
-        {actions ? <div className="uiModalActions">{actions}</div> : null}
+        <div className={cx("uiModalBody", bodyClassName)}>{children}</div>
+        {actions ? <div className={cx("uiModalActions", actionsClassName)}>{actions}</div> : null}
       </div>
     </div>
   );
