@@ -140,6 +140,12 @@ export type ProfileSummary = {
   state?: string | null;
   email_opt_in?: boolean;
   sms_opt_in?: boolean;
+  preferred_genres?: string[];
+  preferred_event_types?: string[];
+  budget_min?: number | null;
+  budget_max?: number | null;
+  max_distance_miles?: number | null;
+  onboarding_completed_at?: string | null;
 };
 
 export type FavoriteItem = {
@@ -558,4 +564,34 @@ export async function getMyVenue(session: AuthSession): Promise<VenueProfileResp
 
 export async function listMyVenueEvents(session: AuthSession, limit = 50): Promise<EventSummary[]> {
   return fetchApi<EventSummary[]>(`/api/v1/venues/mine/events?limit=${limit}`, { session });
+}
+
+export type UpdateMyPreferencesPayload = {
+  preferredGenres?: string[];
+  preferredEventTypes?: string[];
+  budgetMin?: number;
+  budgetMax?: number;
+  maxDistanceMiles?: number;
+  markOnboardingComplete?: boolean;
+};
+
+export async function updateMyPreferences(
+  session: AuthSession,
+  payload: UpdateMyPreferencesPayload,
+): Promise<ProfileSummary> {
+  return fetchApi<ProfileSummary>("/api/v1/profiles/me/preferences", {
+    method: "PATCH",
+    session,
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      preferred_genres: payload.preferredGenres,
+      preferred_event_types: payload.preferredEventTypes,
+      budget_min: payload.budgetMin,
+      budget_max: payload.budgetMax,
+      max_distance_miles: payload.maxDistanceMiles,
+      mark_onboarding_complete: Boolean(payload.markOnboardingComplete),
+    }),
+  });
 }
