@@ -4,10 +4,13 @@ import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { CopyLinkButton } from "@/components/copy-link-button";
 import { ShareButtons } from "@/components/share-buttons";
+import { AddToCalendar } from "@/components/add-to-calendar";
 import { ArtistFollowButton } from "@/components/artist-follow-button";
 import { FavoriteEventButton } from "@/components/favorite-event-button";
+import { InterestedButton } from "@/components/interested-button";
 import { getEventArtists, getEventDetail, type EventArtist, type EventDetailResponse } from "@/lib/api";
 import { RecentlyViewedTracker } from "@/components/recently-viewed-tracker";
+import { EventReviews } from "@/components/event-reviews";
 
 type EventDetailPageProps = {
   params: Promise<{ id: string }>;
@@ -146,8 +149,16 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
 
                 <CopyLinkButton />
                 <ShareButtons title={event.title} />
+                <AddToCalendar
+                  title={event.title}
+                  startTime={event.start_time}
+                  endTime={event.end_time}
+                  location={event.venue_name}
+                  description={event.description ?? undefined}
+                />
 
                 <FavoriteEventButton eventId={event.id} />
+                <InterestedButton eventId={event.id} />
 
                 <Link href="/search" className="pageActionLink secondary">
                   Back to Search
@@ -169,6 +180,11 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
                 Event details, timing, category, and ticket link are now sourced from API payloads instead of Week 2 mock
                 cards.
               </p>
+            </div>
+
+            <div className="eventSidebarCard">
+              <h2>Reviews</h2>
+              <EventReviews eventId={event.id} />
             </div>
 
             <div className="eventSidebarCard">
