@@ -6,7 +6,12 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { GuestAccessPanel } from "@/components/guest-access-panel";
-import { signUpWithSupabase } from "@/lib/auth";
+import {
+  saveAuthSession,
+  signInWithSupabase,
+  signUpWithSupabase,
+  type AuthSession,
+} from "@/lib/auth";
 
 const ACCOUNT_ROLES = ["user", "artist", "venue"] as const;
 type AccountRole = (typeof ACCOUNT_ROLES)[number];
@@ -24,12 +29,22 @@ function validateEmail(email: string): string {
 
 function validatePassword(password: string): string {
   if (password.length < 8) return "Password must be at least 8 characters.";
-  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) return "Password needs at least one letter and one number.";
+  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+    return "Password needs at least one letter and one number.";
+  }
   return "";
+}
+
+function getPostSignupDestination(session: AuthSession): string {
+  if (session.role === "user") return "/onboarding";
+  if (session.role === "venue") return "/venues/dashboard";
+  if (session.role === "artist") return "/artists/dashboard";
+  return "/dashboard";
 }
 
 export default function RegisterPage() {
   const router = useRouter();
+
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -41,57 +56,16 @@ export default function RegisterPage() {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [statusMessage, setStatusMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const presetRole = toAccountRole(new URLSearchParams(window.location.search).get("role"));
     setRole((current) => (current === presetRole ? current : presetRole));
   }, []);
-
-  function validateForm() {
-    const nextErrors: Record<string, string> = {};
-    if (!fullName.trim() || fullName.trim().length < 2) {
-      nextErrors.fullName = "Enter your full name.";
-    }
-
-    const emailError = validateEmail(email.trim().toLowerCase());
-    if (emailError) nextErrors.email = emailError;
-
-    const passwordError = validatePassword(password);
-    if (passwordError) nextErrors.password = passwordError;
-    if (!confirmPassword) nextErrors.confirmPassword = "Confirm your password.";
-    if (confirmPassword && confirmPassword !== password) nextErrors.confirmPassword = "Passwords do not match.";
-    if (!acceptedTerms) nextErrors.terms = "You must accept the terms to continue.";
-
-    setErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStatusMessage(null);
-    if (!validateForm()) return;
-
-    try {
-      setIsSubmitting(true);
-      await signUpWithSupabase(fullName.trim(), email.trim().toLowerCase(), password, role, {
-        emailOptIn,
-        smsOptIn,
-      });
-
-      setPassword("");
-      setConfirmPassword("");
-      setStatusMessage({ type: "success", text: "Account created. Please sign in." });
-      router.push("/login");
-      router.refresh();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to create account right now.";
-      setStatusMessage({ type: "error", text: message });
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
 
   function setFieldError(field: string, message: string) {
     setErrors((current) => {
@@ -107,6 +81,73 @@ export default function RegisterPage() {
     });
   }
 
+  function validateForm() {
+    const nextErrors: Record<string, string> = {};
+
+    if (!fullName.trim() || fullName.trim().length < 2) {
+      nextErrors.fullName = "Enter your full name.";
+    }
+
+    const emailError = validateEmail(email.trim().toLowerCase());
+    if (emailError) nextErrors.email = emailError;
+
+    const passwordError = validatePassword(password);
+    if (passwordError) nextErrors.password = passwordError;
+
+    if (!confirmPassword) nextErrors.confirmPassword = "Confirm your password.";
+    if (confirmPassword && confirmPassword !== password) {
+      nextErrors.confirmPassword = "Passwords do not match.";
+    }
+
+    if (!acceptedTerms) nextErrors.terms = "You must accept the terms to continue.";
+
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setStatusMessage(null);
+
+    if (!validateForm()) return;
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    try {
+      setIsSubmitting(true);
+
+      // 1) Create account
+      await signUpWithSupabase(
+        fullName.trim(),
+        normalizedEmail,
+        password,
+        role,
+        {
+          emailOptIn,
+          smsOptIn,
+        },
+      );
+
+      // 2) Auto-sign in right after signup
+      const session = await signInWithSupabase(normalizedEmail, password);
+      saveAuthSession(session);
+
+      setPassword("");
+      setConfirmPassword("");
+      setStatusMessage({ type: "success", text: "Account created. Redirecting..." });
+
+      // 3) Route directly to onboarding (for user role)
+      const destination = getPostSignupDestination(session);
+      router.push(destination);
+      router.refresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to create account right now.";
+      setStatusMessage({ type: "error", text: message });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <section className="siteSection pageAuth">
       <div className="siteContainer">
@@ -114,9 +155,7 @@ export default function RegisterPage() {
           <h1>Create Account</h1>
           <p className="meta">Register as a user, artist, or venue owner.</p>
 
-          <GuestAccessPanel
-            description="Skip account creation for now and explore public event listings. Sign up later when you want saved features."
-          />
+          <GuestAccessPanel description="Skip account creation for now and explore public event listings. Sign up later when you want saved features." />
 
           <form className="authForm" onSubmit={handleSubmit} noValidate>
             <Input
@@ -131,7 +170,9 @@ export default function RegisterPage() {
                   setFieldError("fullName", value.trim().length >= 2 ? "" : "Enter your full name.");
                 }
               }}
-              onBlur={() => setFieldError("fullName", fullName.trim().length >= 2 ? "" : "Enter your full name.")}
+              onBlur={() =>
+                setFieldError("fullName", fullName.trim().length >= 2 ? "" : "Enter your full name.")
+              }
               autoComplete="name"
               aria-invalid={Boolean(errors.fullName)}
               required
@@ -206,7 +247,11 @@ export default function RegisterPage() {
               onBlur={() =>
                 setFieldError(
                   "confirmPassword",
-                  !confirmPassword ? "Confirm your password." : confirmPassword === password ? "" : "Passwords do not match.",
+                  !confirmPassword
+                    ? "Confirm your password."
+                    : confirmPassword === password
+                      ? ""
+                      : "Passwords do not match.",
                 )
               }
               autoComplete="new-password"
@@ -221,7 +266,11 @@ export default function RegisterPage() {
 
             <label className="uiInputWrap">
               <span className="uiInputLabel">Account Role</span>
-              <select className="uiSelect" value={role} onChange={(event) => setRole(event.target.value as (typeof ACCOUNT_ROLES)[number])}>
+              <select
+                className="uiSelect"
+                value={role}
+                onChange={(event) => setRole(event.target.value as AccountRole)}
+              >
                 <option value="user">User</option>
                 <option value="artist">Artist</option>
                 <option value="venue">Venue</option>
@@ -233,12 +282,20 @@ export default function RegisterPage() {
               <p className="authPrefHint">Choose how you want updates from LIVEY.</p>
 
               <label className="checkItem">
-                <input type="checkbox" checked={emailOptIn} onChange={(event) => setEmailOptIn(event.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={emailOptIn}
+                  onChange={(event) => setEmailOptIn(event.target.checked)}
+                />
                 Email me about new events, giveaways, and feature updates.
               </label>
 
               <label className="checkItem">
-                <input type="checkbox" checked={smsOptIn} onChange={(event) => setSmsOptIn(event.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={smsOptIn}
+                  onChange={(event) => setSmsOptIn(event.target.checked)}
+                />
                 Text me reminders and important event updates.
               </label>
             </fieldset>
@@ -269,7 +326,9 @@ export default function RegisterPage() {
           </form>
 
           {statusMessage ? (
-            <p className={`statusBanner ${statusMessage.type === "success" ? "success" : "error"}`}>{statusMessage.text}</p>
+            <p className={`statusBanner ${statusMessage.type === "success" ? "success" : "error"}`}>
+              {statusMessage.text}
+            </p>
           ) : null}
 
           <p className="authSwitch">
