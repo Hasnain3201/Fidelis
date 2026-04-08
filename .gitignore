@@ -33,3 +33,5 @@ logs
 .prettierignore
 
 scraper-old/
+
+.mcp.json

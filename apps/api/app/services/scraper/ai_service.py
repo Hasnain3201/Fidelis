@@ -15,6 +15,7 @@ from .config import (
 )
 from .prompts.event_prompts import EventPrompts
 from .prompts.venue_prompts import VenuePrompts
+from .schemas import EventsExtraction, VenueExtraction
 
 _configured = False
 
@@ -59,7 +60,10 @@ class AIService:
                 emails=raw_data.get("emails", []),
             )
             result = self._generate(prompt, url)
-            return self._parse_json(result)
+            parsed = self._parse_json(result)
+            if "error" in parsed:
+                return parsed
+            return VenueExtraction.from_ai_dict(parsed).to_mapper_dict()
         except Exception as e:
             return {"error": f"AI processing error: {e}"}
 
@@ -73,7 +77,10 @@ class AIService:
                 structured_data=raw_data.get("structured_data", []),
             )
             result = self._generate(prompt, url)
-            return self._parse_json(result)
+            parsed = self._parse_json(result)
+            if "error" in parsed:
+                return parsed
+            return EventsExtraction.from_ai_dict(parsed).to_mapper_dict()
         except Exception as e:
             return {"error": f"AI processing error: {e}"}
 

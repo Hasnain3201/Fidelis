@@ -28,6 +28,7 @@ Please extract and structure the following information into a JSON object:
 
 {{
     "venue_name": "string",
+    "description": "string (1-3 sentence summary of the venue)",
     "venue_address": {{
         "street": "string",
         "city": "string",
@@ -52,7 +53,7 @@ Please extract and structure the following information into a JSON object:
         "alt_phone_type": "landline or mobile",
         "email": "string"
     }},
-    "venue_type": "Bar|Restaurant|Theatre|Concert Hall|Art Gallery|Cinema|Museum|Church|Park|Private|Hotel|Stadium|Arena|Library|Marina|Other",
+    "venue_type": "REQUIRED. Pick exactly one of: Bar, Restaurant, Theatre, Concert Hall, Art Gallery, Cinema, Museum, Church, Park, Private, Hotel, Stadium, Arena, Library, Marina, Other",
     "website": "string",
     "phone_number": "string",
     "capacity": "string",

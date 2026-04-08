@@ -44,6 +44,15 @@ def _coerce_dict(val: Any) -> dict:
     return {}
 
 
+def _coerce_int(val: Any) -> int | None:
+    if val is None:
+        return None
+    try:
+        return int(str(val).strip().replace(",", ""))
+    except (ValueError, TypeError):
+        return None
+
+
 def _first_or_none(lst: list) -> str | None:
     return lst[0] if lst else None
 
@@ -64,8 +73,18 @@ def map_venue_to_supabase(venue_data: dict, source_url: str | None = None) -> di
 
     contact = _coerce_dict(venue_data.get("primary_contact"))
 
+    venue_type_raw = venue_data.get("venue_type")
+    venue_type = venue_type_raw.strip() if isinstance(venue_type_raw, str) and venue_type_raw.strip() else None
+
+    confidence_raw = venue_data.get("confidence_score") or venue_data.get("confidence")
+    try:
+        confidence = float(confidence_raw) if confidence_raw is not None else 0.0
+    except (TypeError, ValueError):
+        confidence = 0.0
+
     return {
         "name": venue_data.get("venue_name") or venue_data.get("name") or "",
+        "description": venue_data.get("description") or None,
         "address_line": addr.get("street") or "",
         "city": addr.get("city") or "",
         "state": addr.get("state") or "",
@@ -79,7 +98,9 @@ def map_venue_to_supabase(venue_data: dict, source_url: str | None = None) -> di
         "geo": _coerce_dict(venue_data.get("geo")),
         "external_ids": _coerce_dict(venue_data.get("external_ids")),
         "source_url": source_url or venue_data.get("source_url") or None,
-        "capacity": venue_data.get("capacity") or None,
+        "capacity": _coerce_int(venue_data.get("capacity")),
+        "venue_type": venue_type,
+        "confidence": confidence,
         "data": venue_data,  # raw backup
     }
 

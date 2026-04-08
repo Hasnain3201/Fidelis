@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl
 
 from app.core.auth import AuthContext, require_role
 
@@ -244,6 +244,100 @@ def scrape_events(
         event_ids=summary["event_ids"],
         content_preview=content_preview,
     )
+
+
+# ---------------------------------------------------------------------------
+# Queue endpoints (durable, worker-driven scraping)
+# ---------------------------------------------------------------------------
+
+
+class EnqueueBatchRequest(BaseModel):
+    urls: list[str] = Field(..., min_length=1)
+    mode: Literal["venue", "events"]
+    enable_render: bool = False
+    dry_run: bool = False
+    venue_id: Optional[str] = None  # only meaningful for events mode
+
+
+class EnqueueBatchResponse(BaseModel):
+    success: bool = True
+    batch_id: str
+    job_ids: list[str]
+
+
+class JobListResponse(BaseModel):
+    jobs: list[dict]
+    count: int
+
+
+@router.post("/queue", response_model=EnqueueBatchResponse)
+def enqueue_scrape_batch(
+    body: EnqueueBatchRequest,
+    auth: AuthContext = _admin,
+) -> EnqueueBatchResponse:
+    """Enqueue a batch of URLs for the worker to scrape one-by-one."""
+    from app.services.scraper.queue_service import QueueService
+
+    try:
+        result = QueueService().enqueue_batch(
+            urls=body.urls,
+            mode=body.mode,
+            enable_render=body.enable_render,
+            dry_run=body.dry_run,
+            venue_id_hint=body.venue_id,
+            created_by=auth.user_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return EnqueueBatchResponse(
+        success=True,
+        batch_id=result["batch_id"],
+        job_ids=result["job_ids"],
+    )
+
+
+@router.get("/queue", response_model=JobListResponse)
+def list_scrape_jobs(
+    status: Optional[str] = Query(None, description="Filter by status (pending|in_progress|completed|failed)"),
+    batch_id: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    auth: AuthContext = _admin,
+) -> JobListResponse:
+    from app.services.scraper.queue_service import QueueService
+
+    try:
+        jobs = QueueService().list_jobs(status=status, batch_id=batch_id, limit=limit)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return JobListResponse(jobs=jobs, count=len(jobs))
+
+
+@router.get("/queue/{job_id}")
+def get_scrape_job(
+    job_id: str,
+    auth: AuthContext = _admin,
+) -> dict:
+    from app.services.scraper.queue_service import QueueService
+
+    job = QueueService().get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Scrape job not found")
+    return job
+
+
+@router.post("/queue/{job_id}/rescrape")
+def rescrape_scrape_job(
+    job_id: str,
+    auth: AuthContext = _admin,
+) -> dict:
+    from app.services.scraper.queue_service import QueueService
+
+    try:
+        new_job = QueueService().rescrape(job_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"success": True, "job": new_job}
 
 
 # ---------------------------------------------------------------------------
