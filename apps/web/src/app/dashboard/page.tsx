@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { EventsCalendar } from "@/components/events-calendar";
 import {
   getMyProfile,
   listFavorites,
@@ -443,6 +444,16 @@ export default function UserDashboardPage() {
                       );
                     })}
                 </div>
+              )}
+            </div>
+
+            <div className="card" style={{ gridColumn: "1 / -1" }}>
+              <h2>My Event Calendar</h2>
+              <p className="meta" style={{ marginBottom: 14 }}>Your saved events mapped out by date.</p>
+              {isLoading ? (
+                <div className="stateSkeletonCard" style={{ minHeight: 280 }} />
+              ) : (
+                <EventsCalendar favorites={favorites} />
               )}
             </div>
 
