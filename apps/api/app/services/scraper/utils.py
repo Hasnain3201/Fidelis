@@ -101,7 +101,6 @@ def map_venue_to_supabase(venue_data: dict, source_url: str | None = None) -> di
         "capacity": _coerce_int(venue_data.get("capacity")),
         "venue_type": venue_type,
         "confidence": confidence,
-        "data": venue_data,  # raw backup
     }
 
 

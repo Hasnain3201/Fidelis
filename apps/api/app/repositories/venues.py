@@ -35,7 +35,7 @@ class VenueRepository:
         self._client = client
 
     # ------------------------------------------------------------------
-    # Save (with deduplication by name)
+    # Save (with deduplication by name and source_url)
     # ------------------------------------------------------------------
 
     def save_venue(self, venue_data: dict, source_url: str | None = None) -> dict[str, Any]:
@@ -45,7 +45,10 @@ class VenueRepository:
         if not name:
             raise ValueError("Venue name is required")
 
-        existing = self._find_by_name(name)
+        existing = (
+            self._find_by_name(name)
+            or self._find_by_source_url(row.get("source_url"))
+        )
         if existing:
             merged = _smart_merge(row, existing)
             self._client.table("venues").update(merged).eq("id", existing["id"]).execute()
@@ -82,6 +85,18 @@ class VenueRepository:
             self._client.table("venues")
             .select("*")
             .ilike("name", name)
+            .limit(1)
+            .execute()
+        )
+        return resp.data[0] if resp.data else None
+
+    def _find_by_source_url(self, source_url: str | None) -> dict | None:
+        if not source_url:
+            return None
+        resp = (
+            self._client.table("venues")
+            .select("*")
+            .eq("source_url", source_url)
             .limit(1)
             .execute()
         )

@@ -60,6 +60,9 @@ def _run_job(job: dict) -> dict:
         structured["scraped_at"] = datetime.now(timezone.utc).isoformat()
         structured["source_url"] = url
 
+        if not structured.get("description") and content_preview.get("description"):
+            structured["description"] = content_preview["description"]
+
         if dry_run:
             payload = map_venue_to_supabase(structured, url)
             return {
@@ -104,11 +107,12 @@ def _run_job(job: dict) -> dict:
 
         ai_venue = ai_result.get("venue")
         if ai_venue and not venue_id:
+            venue_desc = ai_venue.get("description") or content_preview.get("description") or None
             mapped_venue = {
                 "venue_name": ai_venue.get("venue_name") or ai_venue.get("name"),
                 "venue_address": ai_venue.get("venue_address") or ai_venue.get("address") or {},
                 "website": ai_venue.get("website") or url,
-                "description": ai_venue.get("description"),
+                "description": venue_desc,
                 "venue_type": ai_venue.get("venue_type"),
                 "primary_contact": ai_venue.get("primary_contact") or {},
                 "social_links": ai_venue.get("social_links") or {},

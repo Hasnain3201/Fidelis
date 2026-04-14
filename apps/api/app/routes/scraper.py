@@ -111,6 +111,9 @@ def scrape_venue(
     structured["scraped_at"] = datetime.now(timezone.utc).isoformat()
     structured["source_url"] = url
 
+    if not structured.get("description") and content_preview.get("description"):
+        structured["description"] = content_preview["description"]
+
     if dry_run:
         payload = map_venue_to_supabase(structured, url)
         logger.info("SCRAPER_DRY_RUN venue payload: %s", payload)
@@ -182,8 +185,10 @@ def scrape_events(
     # If the AI found venue info, save/merge it first to get a UUID
     ai_venue = ai_result.get("venue")
     if ai_venue and not venue_id:
+        venue_desc = ai_venue.get("description") or content_preview.get("description") or None
         mapped_venue = {
             "venue_name": ai_venue.get("name") or ai_venue.get("venue_name"),
+            "description": venue_desc,
             "venue_address": ai_venue.get("address") or {},
             "website": ai_venue.get("website") or url,
             "source_url": url,
@@ -338,6 +343,33 @@ def rescrape_scrape_job(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return {"success": True, "job": new_job}
+
+
+@router.delete("/queue/{job_id}")
+def delete_scrape_job(
+    job_id: str,
+    auth: AuthContext = _admin,
+) -> dict:
+    from app.services.scraper.queue_service import QueueService
+
+    ok = QueueService().delete_job(job_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Scrape job not found")
+    return {"success": True}
+
+
+@router.delete("/queue")
+def clear_scrape_queue(
+    status: Optional[str] = Query(None, description="Only clear jobs with this status. Omit to clear all."),
+    auth: AuthContext = _admin,
+) -> dict:
+    from app.services.scraper.queue_service import QueueService
+
+    try:
+        deleted = QueueService().clear_jobs(status=status)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"success": True, "deleted": deleted}
 
 
 # ---------------------------------------------------------------------------

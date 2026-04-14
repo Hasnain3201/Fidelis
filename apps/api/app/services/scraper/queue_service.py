@@ -193,6 +193,32 @@ class QueueService:
         return len(resp.data or [])
 
     # ------------------------------------------------------------------
+    # Delete / clear
+    # ------------------------------------------------------------------
+
+    def delete_job(self, job_id: str) -> bool:
+        """Delete a single scrape job. Returns True if a row was removed."""
+        resp = (
+            self._client.table("scrape_jobs")
+            .delete()
+            .eq("id", job_id)
+            .execute()
+        )
+        return bool(resp.data)
+
+    def clear_jobs(self, status: str | None = None) -> int:
+        """Delete jobs, optionally filtered by status. Returns count deleted."""
+        if status and status not in VALID_STATUSES:
+            raise ValueError(f"Invalid status '{status}'. Use one of {VALID_STATUSES}")
+        query = self._client.table("scrape_jobs").delete()
+        if status:
+            query = query.eq("status", status)
+        else:
+            query = query.neq("status", "__never__")
+        resp = query.execute()
+        return len(resp.data or [])
+
+    # ------------------------------------------------------------------
     # Rescrape
     # ------------------------------------------------------------------
 

@@ -29,9 +29,12 @@ logs
 # IDE
 .vscode/
 .idea/
+.cursor/
+.claude/
 
 .prettierignore
 
 scraper-old/
 
 .mcp.json
+

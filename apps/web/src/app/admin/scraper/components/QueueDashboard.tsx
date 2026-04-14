@@ -96,12 +96,16 @@ function JobCard({
   onToggle,
   onRescrape,
   rescraping,
+  onDelete,
+  deleting,
 }: {
   job: ScrapeJob;
   expanded: boolean;
   onToggle: () => void;
   onRescrape: () => void;
   rescraping: boolean;
+  onDelete: () => void;
+  deleting: boolean;
 }) {
   const canExpand = job.status === "completed" || job.status === "failed";
   const canRescrape = job.status === "completed" || job.status === "failed";
@@ -162,6 +166,18 @@ function JobCard({
               {rescraping ? "..." : "Rescrape"}
             </Button>
           )}
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={deleting || job.status === "in_progress"}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            style={{ color: "#e74c3c" }}
+          >
+            {deleting ? "..." : "Delete"}
+          </Button>
         </div>
       </div>
 
@@ -229,6 +245,8 @@ export default function QueueDashboard() {
   const [jobs, setJobs] = useState<ScrapeJob[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [rescrapingId, setRescrapingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
 
   const fetchJobs = useCallback(async () => {
     const session = getStoredAuthSession();
@@ -331,6 +349,56 @@ export default function QueueDashboard() {
       setError(err instanceof Error ? err.message : "Network error");
     } finally {
       setRescrapingId(null);
+    }
+  }
+
+  async function handleDelete(jobId: string) {
+    const session = getStoredAuthSession();
+    if (!session) return;
+    setDeletingId(jobId);
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/scraper/queue/${jobId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+        setError(typeof data.detail === "string" ? data.detail : `Delete failed (${response.status})`);
+        return;
+      }
+      void fetchJobs();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function handleClearQueue(status?: string) {
+    const msg = status
+      ? `Clear all ${status} jobs? This cannot be undone.`
+      : "Clear the entire queue? This cannot be undone.";
+    if (!window.confirm(msg)) return;
+
+    const session = getStoredAuthSession();
+    if (!session) return;
+    setClearing(true);
+    try {
+      const qs = status ? `?status=${status}` : "";
+      const response = await fetch(`${API_BASE}/api/v1/scraper/queue${qs}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+        setError(typeof data.detail === "string" ? data.detail : `Clear failed (${response.status})`);
+        return;
+      }
+      void fetchJobs();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setClearing(false);
     }
   }
 
@@ -443,11 +511,24 @@ export default function QueueDashboard() {
 
       {/* Queue list */}
       <div className="card" style={{ padding: 24 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
           <h2 style={{ margin: 0 }}>Scrape queue</h2>
-          <span className="meta" style={{ fontSize: 12 }}>
-            polling every {Math.round(POLL_MS / 1000)}s · {jobs.length} job(s)
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span className="meta" style={{ fontSize: 12 }}>
+              polling every {Math.round(POLL_MS / 1000)}s · {jobs.length} job(s)
+            </span>
+            {jobs.length > 0 && (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={clearing}
+                onClick={() => void handleClearQueue()}
+                style={{ color: "#e74c3c", fontSize: 12 }}
+              >
+                {clearing ? "Clearing..." : "Clear all"}
+              </Button>
+            )}
+          </div>
         </div>
 
         {jobs.length === 0 && (
@@ -480,6 +561,8 @@ export default function QueueDashboard() {
                   onToggle={() => toggleExpanded(job.id)}
                   onRescrape={() => void handleRescrape(job.id)}
                   rescraping={rescrapingId === job.id}
+                  onDelete={() => void handleDelete(job.id)}
+                  deleting={deletingId === job.id}
                 />
               ))}
             </section>
