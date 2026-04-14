@@ -7,7 +7,7 @@ import { getStoredAuthSession } from "@/lib/auth";
 import { isValidZipCode, normalizeZipInput, toZip5 } from "@/lib/zip";
 import type { VenueSummary } from "@/lib/api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://fidelisappsapi-production.up.railway.app";
 
 const VENUE_CARD_IMAGES = [
   "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=80",

@@ -40,7 +40,7 @@ export type SignUpCommunicationPreferences = {
 
 const AUTH_STORAGE_KEY = "livey.auth.session.v1";
 const AUTH_CHANGE_EVENT = "livey-auth-changed";
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://fidelisappsapi-production.up.railway.app";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 

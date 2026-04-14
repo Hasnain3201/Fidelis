@@ -7,7 +7,7 @@ import { getStoredAuthSession } from "@/lib/auth";
 import { searchEventsWithFilters, type EventSummary } from "@/lib/api";
 import { isValidZipCode, normalizeZipInput, toZip5 } from "@/lib/zip";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://fidelisappsapi-production.up.railway.app";
 
 const EVENT_CARD_IMAGES = [
   "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=900&q=80",

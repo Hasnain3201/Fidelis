@@ -70,4 +70,4 @@ With dependencies installed, env configured, and the schema applied, start the F
 uvicorn main:app --reload --port 8000
 ```
 
-The OpenAPI docs will be available at `http://localhost:8000/docs`.
+The OpenAPI docs will be available at `https://fidelisappsapi-production.up.railway.app/docs`.

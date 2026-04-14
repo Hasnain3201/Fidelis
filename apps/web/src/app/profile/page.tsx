@@ -6,7 +6,7 @@ import { getMyProfile, updateMyPreferences, type ProfileSummary } from "@/lib/ap
 import { getAuthChangeEventName, getStoredAuthSession, type AuthSession } from "@/lib/auth";
 
 const AVATAR_KEY = "livey.profile.avatar";
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://fidelisappsapi-production.up.railway.app";
 
 const GENRE_OPTIONS = [
   "live-music",
