@@ -15,12 +15,7 @@ class EventSummary(BaseModel):
     category: str
     zip_code: str = Field(pattern=r"^\d{5}$")
     is_promoted: bool = False
-
-class EventSearchResponse(BaseModel):
-    items: list[EventSummary]
-    page: int
-    limit: int
-    total: int
+    cover_image_url: Optional[str] = None
 
 
 class EventDetail(BaseModel):
@@ -33,6 +28,7 @@ class EventDetail(BaseModel):
     end_time: datetime
     zip_code: str = Field(pattern=r"^\d{5}$")
     ticket_url: Optional[str] = None
+    cover_image_url: Optional[str] = None
 
 
 class EventCreate(BaseModel):
@@ -43,13 +39,13 @@ class EventCreate(BaseModel):
     end_time: datetime
     zip_code: str = Field(pattern=r"^\d{5}$")
     ticket_url: Optional[str] = None
+    cover_image_url: Optional[str] = None
 
-    @model_validator(mode="after")
-    def check_times(self):
-        if self.end_time <= self.start_time:
-            raise ValueError("end_time must be after start_time")
-        return self
-
+class EventSearchResponse(BaseModel):
+    items: list[EventSummary]
+    page: int
+    limit: int
+    total: int
 
 class EventCreated(BaseModel):
     id: str

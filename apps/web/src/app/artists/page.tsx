@@ -11,13 +11,7 @@ import {
   type ArtistSummary,
 } from "@/lib/api";
 
-const ARTIST_CARD_IMAGES = [
-  "https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1503095396549-807759245b35?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1464863979621-258859e62245?auto=format&fit=crop&w=900&q=80",
-];
+import { getCoverImage } from "@/lib/cover-images";
 
 const RECOMMENDED_PAGE_SIZE = 5;
 const SEARCH_PAGE_SIZE = 6;
@@ -39,12 +33,6 @@ const GENRE_OPTIONS = [
   "Comedy",
 ];
 
-function pickImage(artistId: string): string {
-  let hash = 0;
-  for (const char of artistId) hash = (hash + char.charCodeAt(0)) % ARTIST_CARD_IMAGES.length;
-  return ARTIST_CARD_IMAGES[hash];
-}
-
 function mapArtistToCard(artist: ArtistSummary): ArtistCardItem {
   const genreLabel = artist.genre?.trim() || "Genre TBD";
   return {
@@ -52,7 +40,7 @@ function mapArtistToCard(artist: ArtistSummary): ArtistCardItem {
     name: artist.stage_name,
     location: genreLabel,
     description: artist.bio?.trim() || "Artist profile details are available on linked event pages.",
-    image: pickImage(artist.id),
+    image: getCoverImage(artist.cover_image_url, "artist"),
     tags: [genreLabel],
     badge: "Artist",
   };

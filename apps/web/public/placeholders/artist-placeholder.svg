@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2B1F4A" />
+      <stop offset="100%" stop-color="#4B2A7B" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#g1)" />
+  <circle cx="600" cy="320" r="110" fill="#ffffff22" />
+  <rect x="410" y="470" width="380" height="140" rx="70" fill="#ffffff22" />
+  <text x="50%" y="680" text-anchor="middle" fill="#ffffff" font-size="56" font-family="Arial, sans-serif" font-weight="700">Artist</text>
+  <text x="50%" y="730" text-anchor="middle" fill="#d9d1f2" font-size="28" font-family="Arial, sans-serif">Cover coming soon</text>
+</svg>

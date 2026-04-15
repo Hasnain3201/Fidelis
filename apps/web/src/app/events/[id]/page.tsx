@@ -12,16 +12,11 @@ import { getEventArtists, getEventDetail, type EventArtist, type EventDetailResp
 import { RecentlyViewedTracker } from "@/components/recently-viewed-tracker";
 import { EventReviews } from "@/components/event-reviews";
 
+import { getCoverImage } from "@/lib/cover-images";
+
 type EventDetailPageProps = {
   params: Promise<{ id: string }>;
 };
-
-const EVENT_DETAIL_IMAGES = [
-  "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=1600&q=80",
-  "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1600&q=80",
-  "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=1600&q=80",
-  "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=1600&q=80",
-];
 
 function toTitleCase(value: string): string {
   return value
@@ -50,12 +45,6 @@ function formatTime(value: string): string {
   });
 }
 
-function pickImage(eventId: string): string {
-  let hash = 0;
-  for (const char of eventId) hash = (hash + char.charCodeAt(0)) % EVENT_DETAIL_IMAGES.length;
-  return EVENT_DETAIL_IMAGES[hash];
-}
-
 export default async function EventDetailPage({ params }: EventDetailPageProps) {
   const { id } = await params;
 
@@ -82,7 +71,7 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
   }
 
   const categoryLabel = toTitleCase(event.category);
-  const heroImage = pickImage(event.id);
+  const heroImage = getCoverImage(event.cover_image_url, "event");
 
   return (
     <>

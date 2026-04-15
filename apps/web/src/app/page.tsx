@@ -24,32 +24,12 @@ import {
   type RecentlyViewedKind,
 } from "@/lib/recently-viewed";
 
+import { getCoverImage } from "@/lib/cover-images";
+
 const QUICK_FILTERS = ["This Weekend", "Free Events", "Live Music", "Comedy Shows", "DJ Sets"];
 const DEFAULT_DISCOVERY_ZIP = "10001";
 const CARDS_PER_PAGE = 5;
 const MAX_ITEMS_PER_SHELF = 10;
-
-const EVENT_CARD_IMAGES = [
-  "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1496024840928-4c417adf211d?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=900&q=80",
-];
-
-const ARTIST_CARD_IMAGES = [
-  "https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1503095396549-807759245b35?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1464863979621-258859e62245?auto=format&fit=crop&w=900&q=80",
-];
-
-const VENUE_CARD_IMAGES = [
-  "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1497032205916-ac775f0649ae?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?auto=format&fit=crop&w=900&q=80",
-];
 
 type ShelfKey = "recent" | "trending" | "near" | "cities";
 
@@ -79,12 +59,6 @@ function formatTimeLabel(value: string): string {
   });
 }
 
-function pickImage(id: string, images: string[]): string {
-  let hash = 0;
-  for (const char of id) hash = (hash + char.charCodeAt(0)) % images.length;
-  return images[hash];
-}
-
 function matchesQuickFilter(price: string, tags: string[], subtitle: string, activeQuick: string): boolean {
   if (activeQuick === "This Weekend") return true;
   if (activeQuick === "Free Events") return price.toLowerCase().includes("free") || price.includes("$0");
@@ -94,7 +68,7 @@ function matchesQuickFilter(price: string, tags: string[], subtitle: string, act
   return true;
 }
 
-function mapEventToCard(item: EventSummary, index: number): EventCardItem {
+function mapEventToCard(item: EventSummary): EventCardItem {
   const categoryLabel = toTitleCase(item.category);
   return {
     id: item.id,
@@ -107,7 +81,7 @@ function mapEventToCard(item: EventSummary, index: number): EventCardItem {
     location: item.zip_code,
     venue: item.venue_name,
     price: "TBD",
-    image: EVENT_CARD_IMAGES[index % EVENT_CARD_IMAGES.length],
+    image: getCoverImage(item.cover_image_url, "event"),
     tags: [categoryLabel],
     badge: item.is_promoted ? "Promoted" : undefined,
   };
@@ -122,7 +96,7 @@ function mapVenueToCard(venue: VenueSummary): VenueCardItem {
     tagline: venue.verified ? "Verified venue" : "Community venue",
     description: venue.description?.trim() || "Venue profile details are available on event pages.",
     location,
-    image: pickImage(venue.id, VENUE_CARD_IMAGES),
+    image: getCoverImage(venue.cover_image_url, "venue"),
     tags: [venue.zip_code],
     badge: venue.verified ? "Verified" : "Venue",
   };
@@ -500,7 +474,7 @@ export default function HomePage() {
                   </div>
                 </div>
                 <div className="cardsGrid five">
-                  {trendingPageItems.map((item, index) =>
+                  {trendingPageItems.map((item) =>
                     item.item_type === "event" ? (
                       <EventShowcaseCard
                         key={`trending-event-${item.item_id}`}
@@ -515,7 +489,7 @@ export default function HomePage() {
                           location: item.zip_code ?? "N/A",
                           venue: item.venue_name ?? "Unknown Venue",
                           price: "TBD",
-                          image: EVENT_CARD_IMAGES[index % EVENT_CARD_IMAGES.length],
+                          image: getCoverImage(undefined, "event"),
                           tags: [item.category ?? "Trending"],
                           badge: "Trending",
                         }}
@@ -528,7 +502,7 @@ export default function HomePage() {
                           name: item.label,
                           location: item.category ?? "Artist",
                           description: `${item.popularity_count} follows`,
-                          image: pickImage(item.item_id, ARTIST_CARD_IMAGES),
+                          image: getCoverImage(undefined, "artist"),
                           tags: [item.category ?? "Trending"],
                           badge: "Trending",
                         }}

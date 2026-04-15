@@ -9,6 +9,7 @@ export type EventSummary = {
   category: string;
   zip_code: string;
   is_promoted: boolean;
+  cover_image_url?: string | null;
 };
 
 export type EventSearchResponse = {
@@ -45,6 +46,7 @@ export type EventDetailResponse = {
   end_time: string;
   zip_code: string;
   ticket_url?: string | null;
+  cover_image_url?: string | null;
 };
 
 export type EventArtist = {
@@ -60,6 +62,7 @@ export type ArtistSummary = {
   genre?: string | null;
   bio?: string | null;
   media_url?: string | null;
+  cover_image_url?: string | null;
 };
 
 export type ArtistSearchResponse = {
@@ -82,8 +85,28 @@ export type ArtistDetailResponse = {
   genre?: string | null;
   bio?: string | null;
   media_url?: string | null;
+  cover_image_url?: string | null;
 };
- 
+
+export type ArtistProfileResponse = {
+  id: string;
+  stage_name: string;
+  genre?: string | null;
+  bio?: string | null;
+  media_url?: string | null;
+  cover_image_url?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type UpdateMyArtistPayload = {
+  stage_name?: string;
+  genre?: string | null;
+  bio?: string | null;
+  media_url?: string | null;
+  cover_image_url?: string | null;
+};
+
 export type ArtistEventSummary = {
   id: string;
   title: string;
@@ -111,6 +134,7 @@ export type VenueSummary = {
   state?: string | null;
   zip_code: string;
   verified: boolean;
+  cover_image_url?: string | null;
 };
 
 export type VenueSearchResponse = {
@@ -119,7 +143,7 @@ export type VenueSearchResponse = {
   limit: number;
   total: number;
 };
- 
+
 export type VenueSearchParams = {
   query?: string;
   city?: string;
@@ -138,6 +162,7 @@ export type CreateVenueEventPayload = {
   end_time: string;
   zip_code: string;
   ticket_url?: string | null;
+  cover_image_url?: string | null;
 };
 
 export type CreateVenueEventResponse = {
@@ -191,6 +216,17 @@ export type VenueProfileResponse = {
   state?: string | null;
   zip_code: string;
   verified: boolean;
+  cover_image_url?: string | null;
+};
+
+export type UpdateMyVenuePayload = {
+  name?: string;
+  description?: string | null;
+  address_line?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip_code?: string;
+  cover_image_url?: string | null;
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://fidelisappsapi-production.up.railway.app";
@@ -402,7 +438,7 @@ export async function getRecommendedArtists(
 export async function getTrendingContent(limit = 10): Promise<TrendingContentItem[]> {
   const url = new URL("/api/v1/events/trending/content", API_BASE);
   url.searchParams.set("limit", String(limit));
- 
+
   let response: Response;
   try {
     response = await fetchWithTimeout(url.toString(), { cache: "no-store" });
@@ -410,7 +446,7 @@ export async function getTrendingContent(limit = 10): Promise<TrendingContentIte
     const message = error instanceof Error ? error.message : "Network request failed.";
     throw new Error(`${message} Confirm the API is running at ${API_BASE}.`);
   }
- 
+
   if (!response.ok) throw new Error(await parseErrorMessage(response));
   return (await response.json()) as TrendingContentItem[];
 }
@@ -458,7 +494,7 @@ export async function searchVenuesWithFilters(
   params: VenueSearchParams,
 ): Promise<VenueSearchResponse> {
   const url = new URL("/api/v1/venues/search", API_BASE);
- 
+
   if (params.query?.trim()) url.searchParams.set("query", params.query.trim());
   if (params.city?.trim()) url.searchParams.set("city", params.city.trim());
   if (params.state?.trim()) url.searchParams.set("state", params.state.trim().toUpperCase());
@@ -468,7 +504,7 @@ export async function searchVenuesWithFilters(
   }
   if (params.page && params.page > 1) url.searchParams.set("page", String(params.page));
   if (params.limit) url.searchParams.set("limit", String(params.limit));
- 
+
   let response: Response;
   try {
     response = await fetchWithTimeout(url.toString(), { cache: "no-store" });
@@ -476,7 +512,7 @@ export async function searchVenuesWithFilters(
     const message = error instanceof Error ? error.message : "Network request failed.";
     throw new Error(`${message} Confirm the API is running at ${API_BASE}.`);
   }
- 
+
   if (!response.ok) throw new Error(await parseErrorMessage(response));
   return (await response.json()) as VenueSearchResponse;
 }
@@ -577,6 +613,38 @@ export async function getMyVenue(session: AuthSession): Promise<VenueProfileResp
   return fetchApi<VenueProfileResponse>("/api/v1/venues/mine", { session });
 }
 
+export async function updateMyVenue(
+  payload: UpdateMyVenuePayload,
+  session: AuthSession,
+): Promise<VenueProfileResponse> {
+  return fetchApi<VenueProfileResponse>("/api/v1/venues/mine", {
+    method: "PATCH",
+    session,
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getMyArtist(session: AuthSession): Promise<ArtistProfileResponse> {
+  return fetchApi<ArtistProfileResponse>("/api/v1/artists/mine", { session });
+}
+
+export async function updateMyArtist(
+  payload: UpdateMyArtistPayload,
+  session: AuthSession,
+): Promise<ArtistProfileResponse> {
+  return fetchApi<ArtistProfileResponse>("/api/v1/artists/mine", {
+    method: "PATCH",
+    session,
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function listMyVenueEvents(session: AuthSession, limit = 50): Promise<EventSummary[]> {
   return fetchApi<EventSummary[]>(`/api/v1/venues/mine/events?limit=${limit}`, { session });
 }
@@ -614,17 +682,17 @@ export async function updateMyPreferences(
 export async function getVenueDetail(venueId: string): Promise<VenueProfileResponse> {
   return fetchApi<VenueProfileResponse>(`/api/v1/venues/${encodeURIComponent(venueId)}`);
 }
- 
+
 export async function getVenueEvents(venueId: string, limit = 50): Promise<EventSummary[]> {
   return fetchApi<EventSummary[]>(
     `/api/v1/venues/${encodeURIComponent(venueId)}/events?limit=${encodeURIComponent(String(limit))}`,
   );
 }
- 
+
 export async function getArtistDetail(artistId: string): Promise<ArtistDetailResponse> {
   return fetchApi<ArtistDetailResponse>(`/api/v1/artists/${encodeURIComponent(artistId)}`);
 }
- 
+
 export async function getArtistEvents(artistId: string): Promise<ArtistEventSummary[]> {
   return fetchApi<ArtistEventSummary[]>(`/api/v1/artists/${encodeURIComponent(artistId)}/events`);
 }
