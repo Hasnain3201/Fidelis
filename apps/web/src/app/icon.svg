@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="Livey App Icon">
+  <defs>
+    <linearGradient id="liveyGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFC24A"/>
+      <stop offset="45%" stop-color="#F89C2A"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <g filter="url(#softGlow)">
+    <path d="M512 170 C390 170 292 266 292 388 C292 545 512 860 512 860 C512 860 732 545 732 388 C732 266 634 170 512 170 Z" fill="url(#liveyGrad)"/>
+  </g>
+  <path d="M 512.0 300.0 L 535.5 362.6 L 602.4 365.6 L 550.0 407.4 L 567.8 471.9 L 512.0 435.0 L 456.2 471.9 L 474.0 407.4 L 421.6 365.6 L 488.5 362.6 Z" fill="#F5F7FA"/>
+</svg>

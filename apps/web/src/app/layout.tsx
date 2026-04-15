@@ -7,7 +7,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "LIVEY",
-  description: "Find your next unforgettable local experience.",
+  description: "Wherever you are, find fun activities around you.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

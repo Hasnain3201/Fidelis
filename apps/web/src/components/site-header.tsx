@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { clearAuthSession, getAuthChangeEventName, getStoredAuthSession, type AuthSession } from "@/lib/auth";
+import Image from "next/image";
 
 const NAV_ITEMS = [
   { href: "/events", label: "Events" },
@@ -63,7 +64,13 @@ export function SiteHeader() {
       <div className="mainHeader">
         <div className="siteContainer mainHeaderInner">
           <Link href="/" className="brandBlock">
-            <span className="brandMark">L</span>
+            <Image
+              src="/icon.svg"
+              alt="LIVEY"
+              width={22}
+              height={22}
+              className="brandMarkImage"
+            />
             <span className="brandLabel">LIVEY</span>
           </Link>
 
