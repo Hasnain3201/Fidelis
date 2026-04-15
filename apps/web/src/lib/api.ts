@@ -47,6 +47,9 @@ export type EventDetailResponse = {
   zip_code: string;
   ticket_url?: string | null;
   cover_image_url?: string | null;
+  price?: number | null;
+  age_requirement?: string | null;
+  capacity?: number | null;
 };
 
 export type EventArtist = {
@@ -163,6 +166,9 @@ export type CreateVenueEventPayload = {
   zip_code: string;
   ticket_url?: string | null;
   cover_image_url?: string | null;
+  price?: number | null;
+  age_requirement?: string | null;
+  capacity?: number | null;
 };
 
 export type CreateVenueEventResponse = {

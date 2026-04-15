@@ -28,6 +28,13 @@ def _get_supabase_client_or_503():
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
 
+def _parse_uuid_or_404(value: str, detail: str = "Venue not found") -> UUID:
+    try:
+        return UUID(value)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+
+
 # ---------------------------------------------------------------------------
 # Venue profile  (role: venue + approved claim)
 # ---------------------------------------------------------------------------
@@ -171,12 +178,10 @@ def get_my_venue_events(
     auth, venue_id = pair
     try:
         client = get_supabase_client_for_user(auth.access_token)
-        now_utc = datetime.now(timezone.utc).isoformat()
         response = (
             client.table("events")
             .select("id,title,start_time,category,zip_code,venues(name)")
             .eq("venue_id", venue_id)
-            .gte("start_time", now_utc)
             .order("start_time")
             .limit(limit)
             .execute()
@@ -269,14 +274,15 @@ def update_venue(
 
 
 @router.get("/{venue_id}", response_model=VenueProfileRead)
-def get_venue_detail(venue_id: UUID):
+def get_venue_detail(venue_id: str):
+    parsed_venue_id = _parse_uuid_or_404(venue_id)
     client = _get_supabase_client_or_503()
 
     try:
         response = (
             client.table("venues")
             .select(_VENUE_COLS)
-            .eq("id", str(venue_id))
+            .eq("id", str(parsed_venue_id))
             .single()
             .execute()
         )
@@ -294,9 +300,10 @@ def get_venue_detail(venue_id: UUID):
 
 @router.get("/{venue_id}/events", response_model=list[EventSummary])
 def get_venue_events(
-    venue_id: UUID,
+    venue_id: str,
     limit: int = Query(default=50, ge=1, le=200),
 ):
+    parsed_venue_id = _parse_uuid_or_404(venue_id)
     client = _get_supabase_client_or_503()
 
     try:
@@ -304,7 +311,7 @@ def get_venue_events(
         response = (
             client.table("events")
             .select("id,title,start_time,category,zip_code,is_promoted,venues(name)")
-            .eq("venue_id", str(venue_id))
+            .eq("venue_id", str(parsed_venue_id))
             .gte("start_time", now_utc)
             .order("start_time")
             .limit(limit)
@@ -372,6 +379,9 @@ def create_venue_event(
         "zip_code": payload.zip_code,
         "ticket_url": payload.ticket_url,
         "cover_image_url": payload.cover_image_url,
+        "price": payload.price,
+        "age_requirement": payload.age_requirement,
+        "capacity": payload.capacity,
     }
 
     try:

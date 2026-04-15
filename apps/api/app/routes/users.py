@@ -22,15 +22,28 @@ def _get_user_client_or_500(access_token: str):
         ) from exc
 
 
+def _execute_or_503(fn, detail: str):
+    try:
+        return fn()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=detail,
+        ) from exc
+
+
 @router.get("/me")
 def get_user_profile(auth: AuthContext = Depends(get_auth_context)):
     client = _get_user_client_or_500(auth.access_token)
-    response = (
-        client.table("profiles")
-        .select("*")
-        .eq("id", auth.user_id)
-        .single()
-        .execute()
+    response = _execute_or_503(
+        lambda: (
+            client.table("profiles")
+            .select("*")
+            .eq("id", auth.user_id)
+            .single()
+            .execute()
+        ),
+        "Failed to load profile",
     )
 
     if not response.data:
@@ -48,11 +61,14 @@ def update_user_profile(
         raise HTTPException(status_code=422, detail="No fields to update")
 
     client = _get_user_client_or_500(auth.access_token)
-    response = (
-        client.table("profiles")
-        .update(updates)
-        .eq("id", auth.user_id)
-        .execute()
+    response = _execute_or_503(
+        lambda: (
+            client.table("profiles")
+            .update(updates)
+            .eq("id", auth.user_id)
+            .execute()
+        ),
+        "Failed to update profile",
     )
 
     rows = response.data or []
@@ -67,12 +83,15 @@ def list_user_favorites(auth: AuthContext = Depends(get_auth_context)):
         raise HTTPException(status_code=403, detail="Role 'user' required")
 
     client = _get_user_client_or_500(auth.access_token)
-    response = (
-        client.table("favorites")
-        .select("event_id,created_at,events(title,start_time)")
-        .eq("user_id", auth.user_id)
-        .order("created_at", desc=True)
-        .execute()
+    response = _execute_or_503(
+        lambda: (
+            client.table("favorites")
+            .select("event_id,created_at,events(title,start_time)")
+            .eq("user_id", auth.user_id)
+            .order("created_at", desc=True)
+            .execute()
+        ),
+        "Failed to load favorites",
     )
 
     rows = response.data or []
@@ -101,15 +120,18 @@ def add_user_favorite(
         raise HTTPException(status_code=403, detail="Role 'user' required")
 
     client = _get_user_client_or_500(auth.access_token)
-    response = (
-        client.table("favorites")
-        .upsert(
-            {
-                "user_id": auth.user_id,
-                "event_id": payload.event_id,
-            }
-        )
-        .execute()
+    response = _execute_or_503(
+        lambda: (
+            client.table("favorites")
+            .upsert(
+                {
+                    "user_id": auth.user_id,
+                    "event_id": payload.event_id,
+                }
+            )
+            .execute()
+        ),
+        "Failed to add favorite",
     )
 
     rows = response.data or []
@@ -132,7 +154,10 @@ def remove_user_favorite(event_id: str, auth: AuthContext = Depends(get_auth_con
         raise HTTPException(status_code=403, detail="Role 'user' required")
 
     client = _get_user_client_or_500(auth.access_token)
-    client.table("favorites").delete().eq("user_id", auth.user_id).eq("event_id", event_id).execute()
+    _execute_or_503(
+        lambda: client.table("favorites").delete().eq("user_id", auth.user_id).eq("event_id", event_id).execute(),
+        "Failed to remove favorite",
+    )
     return None
 
 
@@ -142,12 +167,15 @@ def list_user_follows(auth: AuthContext = Depends(get_auth_context)):
         raise HTTPException(status_code=403, detail="Role 'user' required")
 
     client = _get_user_client_or_500(auth.access_token)
-    response = (
-        client.table("artist_follows")
-        .select("artist_id,created_at,artists(stage_name)")
-        .eq("user_id", auth.user_id)
-        .order("created_at", desc=True)
-        .execute()
+    response = _execute_or_503(
+        lambda: (
+            client.table("artist_follows")
+            .select("artist_id,created_at,artists(stage_name)")
+            .eq("user_id", auth.user_id)
+            .order("created_at", desc=True)
+            .execute()
+        ),
+        "Failed to load follows",
     )
 
     rows = response.data or []
@@ -171,15 +199,18 @@ def create_user_follow(payload: FollowCreate, auth: AuthContext = Depends(get_au
         raise HTTPException(status_code=403, detail="Role 'user' required")
 
     client = _get_user_client_or_500(auth.access_token)
-    response = (
-        client.table("artist_follows")
-        .upsert(
-            {
-                "user_id": auth.user_id,
-                "artist_id": payload.artist_id,
-            }
-        )
-        .execute()
+    response = _execute_or_503(
+        lambda: (
+            client.table("artist_follows")
+            .upsert(
+                {
+                    "user_id": auth.user_id,
+                    "artist_id": payload.artist_id,
+                }
+            )
+            .execute()
+        ),
+        "Failed to follow artist",
     )
 
     rows = response.data or []
@@ -201,5 +232,8 @@ def remove_user_follow(artist_id: str, auth: AuthContext = Depends(get_auth_cont
         raise HTTPException(status_code=403, detail="Role 'user' required")
 
     client = _get_user_client_or_500(auth.access_token)
-    client.table("artist_follows").delete().eq("user_id", auth.user_id).eq("artist_id", artist_id).execute()
+    _execute_or_503(
+        lambda: client.table("artist_follows").delete().eq("user_id", auth.user_id).eq("artist_id", artist_id).execute(),
+        "Failed to unfollow artist",
+    )
     return None

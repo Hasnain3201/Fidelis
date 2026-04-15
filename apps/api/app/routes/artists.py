@@ -24,6 +24,13 @@ def _get_supabase_client_or_503():
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
 
+def _parse_uuid_or_404(value: str, detail: str = "Artist not found") -> UUID:
+    try:
+        return UUID(value)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+
+
 # ---------------------------------------------------------------------------
 # Public discovery endpoints
 # ---------------------------------------------------------------------------
@@ -221,14 +228,15 @@ def update_artist_profile(
     return rows[0]
 
 @router.get("/{artist_id}", response_model=ArtistProfileRead)
-def get_artist_detail(artist_id: UUID):
+def get_artist_detail(artist_id: str):
+    parsed_artist_id = _parse_uuid_or_404(artist_id)
     client = _get_supabase_client_or_503()
  
     try:
         response = (
             client.table("artists")
             .select(_ARTIST_COLS)
-            .eq("id", str(artist_id))
+            .eq("id", str(parsed_artist_id))
             .single()
             .execute()
         )
@@ -245,7 +253,8 @@ def get_artist_detail(artist_id: UUID):
 
 
 @router.get("/{artist_id}/events")
-async def get_artist_events(artist_id: UUID):
+async def get_artist_events(artist_id: str):
+    parsed_artist_id = _parse_uuid_or_404(artist_id)
     client = _get_supabase_client_or_503()
 
     try:
@@ -253,7 +262,7 @@ async def get_artist_events(artist_id: UUID):
             client
             .table("event_artists")
             .select("events(id, title, start_time, category, zip_code, venues(name))")
-            .eq("artist_id", artist_id)
+            .eq("artist_id", str(parsed_artist_id))
             .execute()
         )
     except Exception:

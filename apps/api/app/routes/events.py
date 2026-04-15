@@ -182,34 +182,34 @@ def search_events(
     client = _get_supabase_client_or_503()
     offset = (page - 1) * limit
 
-    supabase_query = build_event_query(
-        client,
-        query=query,
-        zip_code=zip_code,
-        city=city,
-        state=state,
-        start_after=start_after,
-        start_before=start_before,
-        categories=categories,
-        venue=venue,
-        include_count=True,
-        is_promoted=is_promoted,
-    ).range(offset, offset + limit - 1)
-
-    try:
-        response = supabase_query.execute()
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Failed to search events",
+    if type_tokens:
+        # For type token filtering, fetch the full candidate set first so total/pagination
+        # reflect post-filtered results rather than only the current DB page.
+        full_query = build_event_query(
+            client,
+            query=query,
+            zip_code=zip_code,
+            city=city,
+            state=state,
+            start_after=start_after,
+            start_before=start_before,
+            categories=categories,
+            venue=venue,
+            include_count=True,
+            is_promoted=is_promoted,
         )
 
-    rows = response.data or []
+        try:
+            full_response = full_query.execute()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to search events",
+            )
 
-    if type_tokens:
-        rows = [
+        matched_rows = [
             row
-            for row in rows
+            for row in (full_response.data or [])
             if _matches_type_tokens(
                 str(row.get("title", "")),
                 str(row.get("category", "")),
@@ -217,9 +217,36 @@ def search_events(
             )
         ]
 
-    total = response.count if isinstance(response.count, int) else len(rows)
-    if type_tokens:
-        total = len(rows)
+        if sort_value != "recommended":
+            matched_rows = _sort_event_rows(matched_rows, sort_value)
+
+        total = len(matched_rows)
+        rows = matched_rows[offset : offset + limit]
+    else:
+        supabase_query = build_event_query(
+            client,
+            query=query,
+            zip_code=zip_code,
+            city=city,
+            state=state,
+            start_after=start_after,
+            start_before=start_before,
+            categories=categories,
+            venue=venue,
+            include_count=True,
+            is_promoted=is_promoted,
+        ).range(offset, offset + limit - 1)
+
+        try:
+            response = supabase_query.execute()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to search events",
+            )
+
+        rows = response.data or []
+        total = response.count if isinstance(response.count, int) else len(rows)
 
     items = [
         EventSummary(
@@ -235,7 +262,7 @@ def search_events(
         for row in rows
     ]
 
-    if sort_value != "recommended":
+    if sort_value != "recommended" and not type_tokens:
         items = [
             EventSummary(**row)
             for row in _sort_event_rows([item.model_dump(mode="json") for item in items], sort_value)
@@ -436,7 +463,7 @@ def get_event(event_id: str):
         response = (
             client.table("events")
             .select(
-                "id,title,description,start_time,end_time,category,zip_code,ticket_url,cover_image_url,venues(name)"
+                "id,title,description,start_time,end_time,category,zip_code,ticket_url,cover_image_url,price,age_requirement,capacity,venues(name)"
             )
             .eq("id", str(parsed_event_id))
             .single()
@@ -464,4 +491,7 @@ def get_event(event_id: str):
         zip_code=row["zip_code"],
         ticket_url=row.get("ticket_url"),
         cover_image_url=row.get("cover_image_url"),
+        price=row.get("price"),
+        age_requirement=row.get("age_requirement"),
+        capacity=row.get("capacity"),
     )

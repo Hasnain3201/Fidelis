@@ -249,6 +249,9 @@ export default function CreateEventPage() {
         end_time: endDate.toISOString(),
         zip_code: form.zipCode.slice(0, 5),
         ticket_url: form.ticketUrl.trim() || null,
+        price: form.priceType === "paid" ? Number(form.price) : 0,
+        age_requirement: form.ageRequirement,
+        capacity: form.capacity.trim() ? Number(form.capacity) : null,
       };
 
       const result = await createVenueEvent(payload, session);

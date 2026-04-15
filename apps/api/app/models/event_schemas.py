@@ -29,6 +29,9 @@ class EventDetail(BaseModel):
     zip_code: str = Field(pattern=r"^\d{5}$")
     ticket_url: Optional[str] = None
     cover_image_url: Optional[str] = None
+    price: Optional[float] = None
+    age_requirement: Optional[str] = None
+    capacity: Optional[int] = None
 
 
 class EventCreate(BaseModel):
@@ -40,6 +43,9 @@ class EventCreate(BaseModel):
     zip_code: str = Field(pattern=r"^\d{5}$")
     ticket_url: Optional[str] = None
     cover_image_url: Optional[str] = None
+    price: Optional[float] = Field(default=None, ge=0)
+    age_requirement: Optional[str] = Field(default=None, max_length=40)
+    capacity: Optional[int] = Field(default=None, ge=1)
 
 class EventSearchResponse(BaseModel):
     items: list[EventSummary]
