@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+  <defs>
+    <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E3A5F" />
+      <stop offset="100%" stop-color="#2F5D8A" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#g2)" />
+  <rect x="430" y="220" width="340" height="260" rx="18" fill="#ffffff22" />
+  <rect x="470" y="300" width="80" height="80" fill="#ffffff33" />
+  <rect x="565" y="300" width="80" height="80" fill="#ffffff33" />
+  <rect x="660" y="300" width="80" height="80" fill="#ffffff33" />
+  <text x="50%" y="680" text-anchor="middle" fill="#ffffff" font-size="56" font-family="Arial, sans-serif" font-weight="700">Venue</text>
+  <text x="50%" y="730" text-anchor="middle" fill="#d2dfed" font-size="28" font-family="Arial, sans-serif">Cover coming soon</text>
+</svg>
