@@ -15,8 +15,7 @@ from app.models.artist_schemas import (
 
 router = APIRouter()
 
-_ARTIST_COLS = "id,stage_name,genre,bio,media_url,created_at,updated_at"
-
+_ARTIST_COLS = "id,stage_name,genre,bio,media_url,cover_image_url,created_at,updated_at"
 
 def _get_supabase_client_or_503():
     try:

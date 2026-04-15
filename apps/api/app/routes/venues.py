@@ -19,8 +19,7 @@ from app.models.venue_schemas import (
 
 router = APIRouter()
 
-_VENUE_COLS = "id,name,description,address_line,city,state,zip_code,verified,created_at,updated_at"
-
+_VENUE_COLS = "id,name,description,address_line,city,state,zip_code,verified,cover_image_url,created_at,updated_at"
 
 def _get_supabase_client_or_503():
     try:
@@ -372,6 +371,7 @@ def create_venue_event(
         "end_time": payload.end_time.isoformat(),
         "zip_code": payload.zip_code,
         "ticket_url": payload.ticket_url,
+        "cover_image_url": payload.cover_image_url,
     }
 
     try:

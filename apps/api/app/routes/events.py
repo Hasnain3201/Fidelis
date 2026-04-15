@@ -1,13 +1,12 @@
 from datetime import datetime, timezone
-from typing import Optional, List, Any, Literal, cast
+from typing import Any, List, Literal, Optional, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Query, HTTPException, Depends, status
-
-from app.db.supabase import get_supabase_client
-from app.models.event_schemas import EventSummary, EventSearchResponse, EventDetail, TrendingContentItem
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.auth import require_user_id
+from app.db.supabase import get_supabase_client
+from app.models.event_schemas import EventDetail, EventSearchResponse, EventSummary, TrendingContentItem
 
 router = APIRouter()
 
@@ -66,14 +65,15 @@ def build_event_query(
     include_count: bool = False,
     is_promoted: Optional[bool] = None,
 ):
+    select_clause = (
+        "id,title,start_time,category,zip_code,is_promoted,cover_image_url,venues(name, city, state)"
+    )
+
     table = client.table("events")
     if include_count:
-        q = table.select(
-            "id,title,start_time,category,zip_code,is_promoted,venues(name, city, state)",
-            count="exact",
-        )
+        q = table.select(select_clause, count="exact")
     else:
-        q = table.select("id,title,start_time,category,zip_code,is_promoted,venues(name, city, state)")
+        q = table.select(select_clause)
 
     q = q.order("start_time")
 
@@ -110,6 +110,7 @@ def build_event_query(
 
     return q
 
+
 @router.get("/", response_model=list[EventSummary])
 def list_events(
     zip_code: Optional[str] = Query(default=None, pattern=r"^\d{5}$"),
@@ -119,7 +120,7 @@ def list_events(
 
     query = (
         client.table("events")
-        .select("events(id,title,start_time,category,zip_code,is_promoted,venues(name))")
+        .select("id,title,start_time,category,zip_code,is_promoted,cover_image_url,venues(name)")
         .order("start_time")
         .limit(limit)
     )
@@ -134,6 +135,7 @@ def list_events(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Failed to load events",
         )
+
     rows = response.data or []
 
     return [
@@ -144,39 +146,40 @@ def list_events(
             start_time=row["start_time"],
             category=row["category"],
             zip_code=row["zip_code"],
+            is_promoted=bool(row.get("is_promoted", False)),
+            cover_image_url=row.get("cover_image_url"),
         )
         for row in rows
     ]
 
+
 @router.get("/search", response_model=EventSearchResponse)
 def search_events(
     query: Optional[str] = Query(default=None),
-
     zip_code: Optional[str] = Query(default=None, pattern=r"^\d{5}$"),
     city: Optional[str] = Query(default=None),
     state: Optional[str] = Query(default=None),
-
     start_after: Optional[datetime] = Query(default=None),
     start_before: Optional[datetime] = Query(default=None),
-
     categories: Optional[List[str]] = Query(default=None),
-
     venue: Optional[str] = Query(default=None),
     types: Optional[str] = Query(default=None),
     sort: str = Query(default="recommended"),
-
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     is_promoted: Optional[bool] = Query(default=None),
 ):
     type_tokens = _parse_type_tokens(types)
+
     allowed_sorts: set[EventSort] = {"recommended", "dateSoonest", "dateLatest"}
     if sort not in allowed_sorts:
-        raise HTTPException(status_code=422, detail="Invalid sort value. Use recommended, dateSoonest, or dateLatest.")
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid sort value. Use recommended, dateSoonest, or dateLatest.",
+        )
     sort_value = cast(EventSort, sort)
 
     client = _get_supabase_client_or_503()
-
     offset = (page - 1) * limit
 
     supabase_query = build_event_query(
@@ -190,7 +193,7 @@ def search_events(
         categories=categories,
         venue=venue,
         include_count=True,
-        is_promoted=is_promoted
+        is_promoted=is_promoted,
     ).range(offset, offset + limit - 1)
 
     try:
@@ -200,7 +203,9 @@ def search_events(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Failed to search events",
         )
+
     rows = response.data or []
+
     if type_tokens:
         rows = [
             row
@@ -211,6 +216,7 @@ def search_events(
                 type_tokens,
             )
         ]
+
     total = response.count if isinstance(response.count, int) else len(rows)
     if type_tokens:
         total = len(rows)
@@ -223,9 +229,12 @@ def search_events(
             start_time=row["start_time"],
             category=row["category"],
             zip_code=row["zip_code"],
+            is_promoted=bool(row.get("is_promoted", False)),
+            cover_image_url=row.get("cover_image_url"),
         )
         for row in rows
     ]
+
     if sort_value != "recommended":
         items = [
             EventSummary(**row)
@@ -239,13 +248,13 @@ def search_events(
         total=total,
     )
 
+
 @router.get("/recommended", response_model=list[EventSummary])
 async def get_recommended_events(user_id: UUID = Depends(require_user_id)):
     client = _get_supabase_client_or_503()
-    
+
     user_location = (
-        client
-        .table("profiles")
+        client.table("profiles")
         .select("home_zip,city,state")
         .eq("id", user_id)
         .single()
@@ -253,26 +262,26 @@ async def get_recommended_events(user_id: UUID = Depends(require_user_id)):
     ).data or {}
 
     user_favorite_events = (
-        client
-        .table("favorites")
+        client.table("favorites")
         .select("events(category)")
         .eq("user_id", user_id)
         .execute()
     ).data or []
 
     user_followed_artists = (
-        client
-        .table("artist_follows")
+        client.table("artist_follows")
         .select("artist_id")
         .eq("user_id", user_id)
         .execute()
     ).data or []
 
-    categories = list({
-        fav.get("events", {}).get("category")
-        for fav in user_favorite_events
-        if fav.get("events")
-    })
+    categories = list(
+        {
+            fav.get("events", {}).get("category")
+            for fav in user_favorite_events
+            if fav.get("events")
+        }
+    )
 
     artist_ids = [a["artist_id"] for a in user_followed_artists]
 
@@ -281,17 +290,16 @@ async def get_recommended_events(user_id: UUID = Depends(require_user_id)):
         zip_code=user_location.get("home_zip"),
         city=user_location.get("city"),
         state=user_location.get("state"),
-        categories=categories if categories else None
+        categories=categories if categories else None,
     ).limit(50)
 
     base_events = base_query.execute().data or []
 
-    artist_events = []
+    artist_events: list[dict[str, Any]] = []
     if artist_ids:
         artist_response = (
-            client
-            .table("event_artists")
-            .select("events(id,title,start_time,category,zip_code,is_promoted,venues(name))")
+            client.table("event_artists")
+            .select("events(id,title,start_time,category,zip_code,is_promoted,cover_image_url,venues(name))")
             .in_("artist_id", artist_ids)
             .execute()
         ).data or []
@@ -309,8 +317,8 @@ async def get_recommended_events(user_id: UUID = Depends(require_user_id)):
 
         seen.add(event["id"])
         combined.append(event)
-    
-    combined.sort(key=lambda x: x["start_time"])
+
+    combined.sort(key=lambda x: x.get("start_time") or "")
 
     items = [
         EventSummary(
@@ -320,12 +328,14 @@ async def get_recommended_events(user_id: UUID = Depends(require_user_id)):
             start_time=row["start_time"],
             category=row["category"],
             zip_code=row["zip_code"],
-            is_promoted=row.get("is_promoted", False),
+            is_promoted=bool(row.get("is_promoted", False)),
+            cover_image_url=row.get("cover_image_url"),
         )
         for row in combined
     ]
 
     return items
+
 
 @router.get("/trending/content", response_model=list[TrendingContentItem])
 async def get_trending_content(limit: int = Query(10, ge=1, le=50)):
@@ -348,15 +358,12 @@ async def get_trending_content(limit: int = Query(10, ge=1, le=50)):
         for row in rows
     ]
 
+
 @router.get("/trending", response_model=list[EventSummary])
 async def get_trending_events():
     client = _get_supabase_client_or_503()
 
-    response = (
-        client
-        .rpc("get_popular_events", {"limit_count": 20})
-        .execute()
-    )
+    response = client.rpc("get_popular_events", {"limit_count": 20}).execute()
 
     if response.data is None:
         raise HTTPException(status_code=500, detail="Failed to fetch trending events")
@@ -371,9 +378,12 @@ async def get_trending_events():
             start_time=row["start_time"],
             category=row["category"],
             zip_code=row["zip_code"],
+            is_promoted=bool(row.get("is_promoted", False)),
+            cover_image_url=row.get("cover_image_url"),
         )
         for row in rows
     ]
+
 
 @router.get("/{event_id}/artists")
 async def get_event_artists(event_id: str):
@@ -385,8 +395,7 @@ async def get_event_artists(event_id: str):
 
     try:
         response = (
-            client
-            .table("event_artists")
+            client.table("event_artists")
             .select("artists(id, stage_name, genre, media_url)")
             .eq("event_id", str(parsed_event_id))
             .execute()
@@ -398,20 +407,22 @@ async def get_event_artists(event_id: str):
         )
 
     data = response.data or []
-
     artists = []
 
     for row in data:
         artist = row.get("artists") or {}
 
-        artists.append({
-            "id": artist.get("id"),
-            "stage_name": artist.get("stage_name"),
-            "genre": artist.get("genre"),
-            "media_url": artist.get("media_url")
-        })
+        artists.append(
+            {
+                "id": artist.get("id"),
+                "stage_name": artist.get("stage_name"),
+                "genre": artist.get("genre"),
+                "media_url": artist.get("media_url"),
+            }
+        )
 
     return artists
+
 
 @router.get("/{event_id}", response_model=EventDetail)
 def get_event(event_id: str):
@@ -424,7 +435,9 @@ def get_event(event_id: str):
     try:
         response = (
             client.table("events")
-            .select("id,title,description,start_time,end_time,category,zip_code,ticket_url,venues(name)")
+            .select(
+                "id,title,description,start_time,end_time,category,zip_code,ticket_url,cover_image_url,venues(name)"
+            )
             .eq("id", str(parsed_event_id))
             .single()
             .execute()
@@ -450,4 +463,5 @@ def get_event(event_id: str):
         category=row["category"],
         zip_code=row["zip_code"],
         ticket_url=row.get("ticket_url"),
+        cover_image_url=row.get("cover_image_url"),
     )
