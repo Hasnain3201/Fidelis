@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from typing import Optional
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.auth import AuthContext, require_managed_venue, require_role, require_user_id
@@ -266,6 +268,68 @@ def update_venue(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Venue not found after update")
     return rows[0]
 
+
+@router.get("/{venue_id}", response_model=VenueProfileRead)
+def get_venue_detail(venue_id: UUID):
+    client = _get_supabase_client_or_503()
+
+    try:
+        response = (
+            client.table("venues")
+            .select(_VENUE_COLS)
+            .eq("id", str(venue_id))
+            .single()
+            .execute()
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to load venue",
+        )
+
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Venue not found")
+
+    return response.data
+
+
+@router.get("/{venue_id}/events", response_model=list[EventSummary])
+def get_venue_events(
+    venue_id: UUID,
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    client = _get_supabase_client_or_503()
+
+    try:
+        now_utc = datetime.now(timezone.utc).isoformat()
+        response = (
+            client.table("events")
+            .select("id,title,start_time,category,zip_code,is_promoted,venues(name)")
+            .eq("venue_id", str(venue_id))
+            .gte("start_time", now_utc)
+            .order("start_time")
+            .limit(limit)
+            .execute()
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to load venue events",
+        )
+
+    rows = response.data or []
+    return [
+        EventSummary(
+            id=row["id"],
+            title=row["title"],
+            venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
+            start_time=row["start_time"],
+            category=row["category"],
+            zip_code=row["zip_code"],
+            is_promoted=bool(row.get("is_promoted", False)),
+        )
+        for row in rows
+    ]
 
 # ---------------------------------------------------------------------------
 # Event creation  (role: venue + approved claim)

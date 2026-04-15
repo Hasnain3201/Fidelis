@@ -81,26 +81,30 @@ export function VenueCard({ item }: { item: VenueCardItem }) {
   return (
     <article className="showCard compactCard">
       <div className="mediaWrap">
-        <Image src={item.image} alt={item.name} fill sizes="(max-width: 760px) 100vw, (max-width: 1080px) 50vw, 33vw" />
-        {item.badge ? <span className="pillTop">{item.badge}</span> : null}
+        <Link href={`/venues/${item.id}`} className="showCardLink" aria-label={`Open ${item.name} details`}>
+          <Image src={item.image} alt={item.name} fill sizes="(max-width: 760px) 100vw, (max-width: 1080px) 50vw, 33vw" />
+          {item.badge ? <span className="pillTop">{item.badge}</span> : null}
+        </Link>
         <VenueFollowButton venueId={item.id} />
       </div>
 
-      <div className="cardBody">
-        <h3>{item.name}</h3>
-        <p className="subline">{item.tagline}</p>
-        <p>{item.description}</p>
+      <Link href={`/venues/${item.id}`} className="showCardLink" aria-label={`Open ${item.name} details`}>
+        <div className="cardBody">
+          <h3>{item.name}</h3>
+          <p className="subline">{item.tagline}</p>
+          <p>{item.description}</p>
 
-        <div className="cardMeta">{item.location}</div>
+          <div className="cardMeta">{item.location}</div>
 
-        <div className="tagRow">
-          {(item.tags ?? []).map((tag) => (
-            <span key={tag} className="tagPill soft">
-              {tag}
-            </span>
-          ))}
+          <div className="tagRow">
+            {(item.tags ?? []).map((tag) => (
+              <span key={tag} className="tagPill soft">
+                {tag}
+              </span>
+            ))}
+          </div>
         </div>
-      </div>
+      </Link>
     </article>
   );
 }
@@ -109,24 +113,28 @@ export function ArtistCard({ item }: { item: ArtistCardItem }) {
   return (
     <article className="showCard compactCard">
       <div className="mediaWrap">
-        <Image src={item.image} alt={item.name} fill sizes="(max-width: 760px) 100vw, (max-width: 1080px) 50vw, 33vw" />
-        {item.badge ? <span className="pillTop">{item.badge}</span> : null}
+        <Link href={`/artists/${item.id}`} className="showCardLink" aria-label={`Open ${item.name} details`}>
+          <Image src={item.image} alt={item.name} fill sizes="(max-width: 760px) 100vw, (max-width: 1080px) 50vw, 33vw" />
+          {item.badge ? <span className="pillTop">{item.badge}</span> : null}
+        </Link>
         <ArtistFollowButton artistId={item.id} />
       </div>
 
-      <div className="cardBody">
-        <h3>{item.name}</h3>
-        <div className="cardMeta">{item.location}</div>
-        <p>{item.description}</p>
+      <Link href={`/artists/${item.id}`} className="showCardLink" aria-label={`Open ${item.name} details`}>
+        <div className="cardBody">
+          <h3>{item.name}</h3>
+          <div className="cardMeta">{item.location}</div>
+          <p>{item.description}</p>
 
-        <div className="tagRow">
-          {(item.tags ?? []).map((tag) => (
-            <span key={tag} className="tagPill">
-              {tag}
-            </span>
-          ))}
+          <div className="tagRow">
+            {(item.tags ?? []).map((tag) => (
+              <span key={tag} className="tagPill">
+                {tag}
+              </span>
+            ))}
+          </div>
         </div>
-      </div>
+      </Link>
     </article>
   );
 }

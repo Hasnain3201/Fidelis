@@ -76,6 +76,21 @@ export type ArtistSearchParams = {
   limit?: number;
 };
 
+export type ArtistDetailResponse = {
+  id: string;
+  stage_name: string;
+  genre?: string | null;
+  bio?: string | null;
+  media_url?: string | null;
+};
+ 
+export type ArtistEventSummary = {
+  id: string;
+  title: string;
+  start_time: string;
+  venue_name?: string | null;
+};
+
 export type TrendingContentItem = {
   item_type: "event" | "artist";
   item_id: string;
@@ -594,4 +609,22 @@ export async function updateMyPreferences(
       mark_onboarding_complete: Boolean(payload.markOnboardingComplete),
     }),
   });
+}
+
+export async function getVenueDetail(venueId: string): Promise<VenueProfileResponse> {
+  return fetchApi<VenueProfileResponse>(`/api/v1/venues/${encodeURIComponent(venueId)}`);
+}
+ 
+export async function getVenueEvents(venueId: string, limit = 50): Promise<EventSummary[]> {
+  return fetchApi<EventSummary[]>(
+    `/api/v1/venues/${encodeURIComponent(venueId)}/events?limit=${encodeURIComponent(String(limit))}`,
+  );
+}
+ 
+export async function getArtistDetail(artistId: string): Promise<ArtistDetailResponse> {
+  return fetchApi<ArtistDetailResponse>(`/api/v1/artists/${encodeURIComponent(artistId)}`);
+}
+ 
+export async function getArtistEvents(artistId: string): Promise<ArtistEventSummary[]> {
+  return fetchApi<ArtistEventSummary[]>(`/api/v1/artists/${encodeURIComponent(artistId)}/events`);
 }
