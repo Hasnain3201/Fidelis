@@ -68,6 +68,7 @@ def fetch_ticketmaster_events_by_zip(
     size: int = 50,
     api_key: str | None = None,
     upcoming_only: bool = True,
+    radius_miles: int = 100,
 ) -> dict[str, Any]:
     """Call Ticketmaster Discovery event search by postal code.
 
@@ -89,7 +90,7 @@ def fetch_ticketmaster_events_by_zip(
         "postalCode": z,
         "size": min(max(size, 1), 200),
         "sort": "date,asc",
-        "radius": "100",
+        "radius": str(max(1, int(radius_miles))),
         "unit": "miles",
     }
     if country_code:

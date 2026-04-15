@@ -53,6 +53,17 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Foursquare Places API (venue discovery)
+    # Accepts any of the common env var names for the Places v3 API key
+    foursquare_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "FOURSQUARE_SERVICE_API_KEY",
+            "FOURSQUARE_SERVICE_API",
+            "FOURSQUARE_API_KEY",
+        ),
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,
