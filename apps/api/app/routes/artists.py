@@ -221,6 +221,29 @@ def update_artist_profile(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found after update")
     return rows[0]
 
+@router.get("/{artist_id}", response_model=ArtistProfileRead)
+def get_artist_detail(artist_id: UUID):
+    client = _get_supabase_client_or_503()
+ 
+    try:
+        response = (
+            client.table("artists")
+            .select(_ARTIST_COLS)
+            .eq("id", str(artist_id))
+            .single()
+            .execute()
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to load artist profile",
+        )
+ 
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artist not found")
+ 
+    return response.data
+
 
 @router.get("/{artist_id}/events")
 async def get_artist_events(artist_id: UUID):
