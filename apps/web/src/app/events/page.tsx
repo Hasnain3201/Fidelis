@@ -7,14 +7,11 @@ import { getStoredAuthSession } from "@/lib/auth";
 import { searchEventsWithFilters, type EventSummary } from "@/lib/api";
 import { isValidZipCode, normalizeZipInput, toZip5 } from "@/lib/zip";
 
+import { getCoverImage } from "@/lib/cover-images";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://fidelisappsapi-production.up.railway.app";
 
-const EVENT_CARD_IMAGES = [
-  "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1496024840928-4c417adf211d?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=900&q=80",
-];
+
 
 const RECOMMENDED_PAGE_SIZE = 5;
 const SEARCH_PAGE_SIZE = 6;
@@ -78,7 +75,7 @@ function mapSummaryToCardItem(item: EventSummary, index: number): EventCardItem 
     location: item.zip_code,
     venue: item.venue_name,
     price: "TBD",
-    image: EVENT_CARD_IMAGES[index % EVENT_CARD_IMAGES.length],
+    image: getCoverImage(item.cover_image_url, "event"),
     tags: [categoryLabel],
   };
 }

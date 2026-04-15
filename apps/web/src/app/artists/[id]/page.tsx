@@ -7,22 +7,11 @@ import { ArtistFollowButton } from "@/components/artist-follow-button";
 import { RecentlyViewedTracker } from "@/components/recently-viewed-tracker";
 import { getArtistDetail, getArtistEvents, type ArtistDetailResponse, type ArtistEventSummary } from "@/lib/api";
 
+import { getCoverImage } from "@/lib/cover-images";
+
 type ArtistDetailPageProps = {
   params: Promise<{ id: string }>;
 };
-
-const ARTIST_DETAIL_IMAGES = [
-  "https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=1600&q=80",
-  "https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=1600&q=80",
-  "https://images.unsplash.com/photo-1503095396549-807759245b35?auto=format&fit=crop&w=1600&q=80",
-  "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=1600&q=80",
-];
-
-function pickImage(artistId: string): string {
-  let hash = 0;
-  for (const char of artistId) hash = (hash + char.charCodeAt(0)) % ARTIST_DETAIL_IMAGES.length;
-  return ARTIST_DETAIL_IMAGES[hash];
-}
 
 function formatDate(value: string): string {
   const date = new Date(value);
@@ -67,7 +56,7 @@ export default async function ArtistDetailPage({ params }: ArtistDetailPageProps
     events = [];
   }
 
-  const heroImage = pickImage(artist.id);
+  const heroImage = getCoverImage(artist.cover_image_url, "artist");
   const genreLabel = artist.genre?.trim() || "Genre TBD";
 
   return (

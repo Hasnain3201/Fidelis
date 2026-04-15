@@ -7,22 +7,11 @@ import { VenueFollowButton } from "@/components/venue-follow-button";
 import { RecentlyViewedTracker } from "@/components/recently-viewed-tracker";
 import { getVenueDetail, getVenueEvents, type EventSummary, type VenueProfileResponse } from "@/lib/api";
 
+import { getCoverImage } from "@/lib/cover-images";
+
 type VenueDetailPageProps = {
   params: Promise<{ id: string }>;
 };
-
-const VENUE_DETAIL_IMAGES = [
-  "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1600&q=80",
-  "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1600&q=80",
-  "https://images.unsplash.com/photo-1497032205916-ac775f0649ae?auto=format&fit=crop&w=1600&q=80",
-  "https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?auto=format&fit=crop&w=1600&q=80",
-];
-
-function pickImage(venueId: string): string {
-  let hash = 0;
-  for (const char of venueId) hash = (hash + char.charCodeAt(0)) % VENUE_DETAIL_IMAGES.length;
-  return VENUE_DETAIL_IMAGES[hash];
-}
 
 function formatDate(value: string): string {
   const date = new Date(value);
@@ -73,7 +62,7 @@ export default async function VenueDetailPage({ params }: VenueDetailPageProps) 
     events = [];
   }
 
-  const heroImage = pickImage(venue.id);
+  const heroImage = getCoverImage(venue.cover_image_url, "venue");
   const locationLabel = buildLocationLabel(venue);
   const mapsQuery = [venue.name, venue.address_line, venue.city, venue.state, venue.zip_code]
     .filter(Boolean)

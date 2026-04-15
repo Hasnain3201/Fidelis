@@ -7,14 +7,9 @@ import { getStoredAuthSession } from "@/lib/auth";
 import { isValidZipCode, normalizeZipInput, toZip5 } from "@/lib/zip";
 import type { VenueSummary } from "@/lib/api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://fidelisappsapi-production.up.railway.app";
+import { getCoverImage } from "@/lib/cover-images";
 
-const VENUE_CARD_IMAGES = [
-  "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1497032205916-ac775f0649ae?auto=format&fit=crop&w=900&q=80",
-  "https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?auto=format&fit=crop&w=900&q=80",
-];
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://fidelisappsapi-production.up.railway.app";
 
 const RECOMMENDED_PAGE_SIZE = 5;
 const SEARCH_PAGE_SIZE = 6;
@@ -29,12 +24,6 @@ type VenueSearchResponse = {
   total: number;
 };
 
-function pickImage(venueId: string): string {
-  let hash = 0;
-  for (const char of venueId) hash = (hash + char.charCodeAt(0)) % VENUE_CARD_IMAGES.length;
-  return VENUE_CARD_IMAGES[hash];
-}
-
 function mapVenueToCard(venue: VenueSummary): VenueCardItem {
   const cityState = [venue.city, venue.state].filter(Boolean).join(", ");
   const location = cityState || venue.zip_code;
@@ -45,7 +34,7 @@ function mapVenueToCard(venue: VenueSummary): VenueCardItem {
     tagline: venue.verified ? "Verified venue" : "Community venue",
     description: venue.description?.trim() || "Venue profile details are available on event pages.",
     location,
-    image: pickImage(venue.id),
+    image: getCoverImage(venue.cover_image_url, "venue"),
     tags: [venue.zip_code],
     badge: venue.verified ? "Verified" : "Venue",
   };
