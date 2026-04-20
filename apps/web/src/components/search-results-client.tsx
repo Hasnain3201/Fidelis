@@ -235,6 +235,8 @@ export function SearchResultsClient() {
   const [totalResults, setTotalResults] = useState(0);
   const [isFiltering, setIsFiltering] = useState(true);
   const [statusMessage, setStatusMessage] = useState<{ type: "error"; text: string } | null>(null);
+  const [ageFilter, setAgeFilter] = useState<"all" | "18+" | "21+">("all");
+  const [maxCost, setMaxCost] = useState<number>(200);
 
   const requestIdRef = useRef(0);
   const queryDebounceRef = useRef<number | null>(null);
@@ -481,6 +483,18 @@ export function SearchResultsClient() {
 
   const totalPages = Math.max(1, Math.ceil(totalResults / PAGE_SIZE));
 
+  // Client-side filtering for age and cost (API doesn't support these yet)
+  const filteredResults = useMemo(() => {
+    return results.filter((item) => {
+      if (maxCost < 200) {
+        const priceNum = parseFloat(item.price.replace(/[^0-9.]/g, ""));
+        if (!isNaN(priceNum) && priceNum > maxCost) return false;
+      }
+      // age filter is UI-only for now — API items don't carry age_requirement
+      return true;
+    });
+  }, [results, maxCost]);
+
   const summaryParts: string[] = [];
   if (query.trim()) summaryParts.push(`"${query.trim()}"`);
   if (activeCategory !== "All") summaryParts.push(activeCategory);
@@ -593,6 +607,45 @@ export function SearchResultsClient() {
                 </label>
               );
             })}
+          </div>
+        </div>
+
+        <div className="filterField">
+          <span>Age Requirement</span>
+          <div className="checkboxGrid">
+            {(["all", "18+", "21+"] as const).map((age) => (
+              <label key={age} className="checkItem">
+                <input
+                  type="radio"
+                  name="ageFilter"
+                  checked={ageFilter === age}
+                  disabled={disableInputs}
+                  onChange={() => setAgeFilter(age)}
+                />
+                {age === "all" ? "All Ages" : age}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="filterField">
+          <span style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>Max Price</span>
+            <strong style={{ color: "#6942d6" }}>{maxCost >= 200 ? "Any" : `$${maxCost}`}</strong>
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={200}
+            step={5}
+            value={maxCost}
+            disabled={disableInputs}
+            onChange={(e) => setMaxCost(Number(e.target.value))}
+            style={{ width: "100%", accentColor: "#8048ff", marginTop: 6 }}
+          />
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#888", marginTop: 2 }}>
+            <span>Free</span>
+            <span>$200+</span>
           </div>
         </div>
       </aside>
@@ -724,7 +777,7 @@ export function SearchResultsClient() {
         ) : (
           <>
             <div className="cardsGrid eventsDense" style={{ marginTop: 16 }}>
-              {results.map((item) => (
+              {filteredResults.map((item) => (
                 <EventShowcaseCard key={item.id} item={item} />
               ))}
             </div>

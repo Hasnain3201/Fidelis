@@ -4,6 +4,8 @@ import Link from "next/link";
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import { getMyProfile, updateMyPreferences, type ProfileSummary } from "@/lib/api";
 import { getAuthChangeEventName, getStoredAuthSession, type AuthSession } from "@/lib/auth";
+import { getPoints, getVipStatus } from "@/lib/points";
+import { LiveyPointsBadge } from "@/components/livey-points";
 
 const AVATAR_KEY = "livey.profile.avatar";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://fidelisappsapi-production.up.railway.app";
@@ -514,6 +516,28 @@ export default function ProfilePage() {
                     >
                       {profile?.role ?? session.role}
                     </span>
+                    <LiveyPointsBadge />
+                    {(() => {
+                      const pts = getPoints();
+                      const vip = getVipStatus(pts);
+                      if (!vip.isVip) return null;
+                      return (
+                        <span
+                          style={{
+                            display: "inline-block",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            borderRadius: 999,
+                            padding: "3px 9px",
+                            background: "linear-gradient(135deg,#f5b942,#e88c1a)",
+                            color: "#fff",
+                            border: "1px solid #e88c1a",
+                          }}
+                        >
+                          {vip.label}
+                        </span>
+                      );
+                    })()}
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}

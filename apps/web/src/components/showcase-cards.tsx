@@ -17,6 +17,7 @@ export type EventCardItem = {
   image: string;
   tags: string[];
   badge?: string;
+  isSponsored?: boolean;
 };
 
 export type VenueCardItem = {
@@ -51,7 +52,13 @@ export function EventShowcaseCard({ item }: { item: EventCardItem }) {
             fill
             sizes="(max-width: 760px) 100vw, (max-width: 1080px) 50vw, 25vw"
           />
-          {item.badge ? <span className="pillTop">{item.badge}</span> : null}
+          {item.isSponsored ? (
+            <span className="pillTop" style={{ background: "linear-gradient(135deg,#f5b942,#e88c1a)", color: "#fff" }}>
+              ⭐ Sponsored
+            </span>
+          ) : item.badge ? (
+            <span className="pillTop">{item.badge}</span>
+          ) : null}
         </div>
 
         <div className="cardBody">

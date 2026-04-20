@@ -1,5 +1,7 @@
 "use client";
 
+import { awardPoints } from "@/lib/points";
+
 type ShareButtonsProps = {
   title: string;
   url?: string;
@@ -13,12 +15,18 @@ export function ShareButtons({ title, url }: ShareButtonsProps) {
   const twitterHref = `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`;
   const whatsappHref = `https://wa.me/?text=${encodedText}%20${encodedUrl}`;
 
+  function handleShare() {
+    awardPoints("share_event");
+    window.dispatchEvent(new Event("livey:points"));
+  }
+
   return (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
       <a
         href={twitterHref}
         target="_blank"
         rel="noreferrer"
+        onClick={handleShare}
         className="pageActionLink secondary"
         style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}
         aria-label="Share on X (Twitter)"
@@ -29,6 +37,7 @@ export function ShareButtons({ title, url }: ShareButtonsProps) {
         href={whatsappHref}
         target="_blank"
         rel="noreferrer"
+        onClick={handleShare}
         className="pageActionLink secondary"
         style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}
         aria-label="Share on WhatsApp"

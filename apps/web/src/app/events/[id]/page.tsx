@@ -13,6 +13,7 @@ import { InterestedButton } from "@/components/interested-button";
 import { getEventArtists, getEventDetail, type EventArtist, type EventDetailResponse } from "@/lib/api";
 import { RecentlyViewedTracker } from "@/components/recently-viewed-tracker";
 import { EventReviews } from "@/components/event-reviews";
+import { EventReminder } from "@/components/event-reminder";
 
 import { getCoverImage } from "@/lib/cover-images";
 
@@ -125,7 +126,18 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
               <div className="tagRow">
                 <span className="tagPill">{categoryLabel}</span>
                 <span className="tagPill">Live Event</span>
+                {event.age_requirement && (
+                  <span className="tagPill" style={{ background: "#fff3e0", color: "#e65100", border: "1px solid #ffcc80" }}>
+                    {event.age_requirement}
+                  </span>
+                )}
+                {event.price != null && (
+                  <span className="tagPill" style={{ background: "#e8f5e9", color: "#2e7d32", border: "1px solid #a5d6a7" }}>
+                    {event.price === 0 ? "Free" : `$${event.price}`}
+                  </span>
+                )}
               </div>
+
 
               <div className="eventDetailActions">
                 {event.ticket_url ? (
@@ -166,11 +178,55 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
 
             <div className="eventSidebarCard">
               <h2>Venue Snapshot</h2>
-              <p className="meta">{event.venue_name}</p>
-              <p className="meta">
-                Event details, timing, category, and ticket link are now sourced from API payloads instead of Week 2 mock
-                cards.
-              </p>
+              <p className="meta" style={{ fontWeight: 600, marginBottom: 10 }}>{event.venue_name}</p>
+              <div style={{ display: "grid", gap: 8 }}>
+                <a
+                  href={`https://www.google.com/search?q=${encodeURIComponent(event.venue_name + " website")}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: "#6942d6",
+                    textDecoration: "none",
+                    padding: "8px 12px",
+                    borderRadius: 9,
+                    background: "#f3eeff",
+                    border: "1px solid #dacfff",
+                  }}
+                >
+                  🌐 Venue Website
+                </a>
+                <a
+                  href={`https://www.opentable.com/s?query=${encodeURIComponent(event.venue_name)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: "#c0365a",
+                    textDecoration: "none",
+                    padding: "8px 12px",
+                    borderRadius: 9,
+                    background: "#fff0f4",
+                    border: "1px solid #f5c0cc",
+                  }}
+                >
+                  🍽 Reserve a Table
+                </a>
+              </div>
+            </div>
+
+            <div className="eventSidebarCard">
+              <h2>🔔 Get Reminded</h2>
+              <p className="meta" style={{ marginBottom: 12, fontSize: 13 }}>Don&apos;t miss this event — set a reminder.</p>
+              <EventReminder eventId={event.id} eventTitle={event.title} />
             </div>
 
             <div className="eventSidebarCard">

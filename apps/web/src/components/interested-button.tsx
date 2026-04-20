@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getAuthChangeEventName, getStoredAuthSession, type AuthSession } from "@/lib/auth";
+import { awardPoints } from "@/lib/points";
 
 const INTERESTED_KEY = "livey.interested.events";
 
@@ -59,7 +60,9 @@ export function InterestedButton({ eventId, className = "pageActionLink secondar
     } else {
       interested.add(eventId);
       setIsInterested(true);
-      setFeedback(session ? "Marked as interested!" : "Marked as interested! Sign up to get reminders.");
+      awardPoints("interested_event", eventId);
+      window.dispatchEvent(new Event("livey:points"));
+      setFeedback(session ? "Marked as interested! +2 pts 🎟" : "Marked as interested! Sign up to earn points.");
     }
     saveInterestedEvents(interested);
     setTimeout(() => setFeedback(null), 3000);
