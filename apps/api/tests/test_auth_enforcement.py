@@ -111,23 +111,23 @@ def test_venue_cannot_access_artist_mine(venue_client):
     assert resp.status_code == 403
 
 
-# -- Venue/artist without approved claim get 403 ---------------------------
+# -- Venue/artist without managed profile access get 403 --------------------
 
 @patch("app.core.auth.get_managed_venue_ids", return_value=[])
 def test_venue_no_claim_denied(mock_ids, venue_client):
     resp = venue_client.get("/api/v1/venues/mine")
     assert resp.status_code == 403
-    assert "claim" in resp.json()["detail"].lower()
+    assert "managed venue profile" in resp.json()["detail"].lower()
 
 
 @patch("app.core.auth.get_managed_artist_ids", return_value=[])
 def test_artist_no_claim_denied(mock_ids, artist_client):
     resp = artist_client.get("/api/v1/artists/mine")
     assert resp.status_code == 403
-    assert "claim" in resp.json()["detail"].lower()
+    assert "managed artist profile" in resp.json()["detail"].lower()
 
 
-# -- Correct role + claim is accepted (may 500 on unmocked Supabase) -------
+# -- Correct role + managed profile is accepted (may 500 on unmocked Supabase) -------
 
 @patch("app.core.auth.get_managed_venue_ids", return_value=["v1"])
 def test_venue_with_claim_reaches_handler(mock_ids, venue_client):

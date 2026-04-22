@@ -11,7 +11,7 @@ const SECTIONS = [
   },
   {
     title: "Venue Accounts",
-    body: "Venues may publish events after account verification. Published events must be accurate and current. LIVEY reserves the right to remove events that violate platform guidelines or contain false information.",
+    body: "Venues may publish events once their managed venue profile is set up. Published events must be accurate and current. LIVEY reserves the right to remove events that violate platform guidelines or contain false information.",
   },
   {
     title: "Artist Accounts",

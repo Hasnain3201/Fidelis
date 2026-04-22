@@ -93,12 +93,12 @@ function mapVenueToCard(venue: VenueSummary): VenueCardItem {
   return {
     id: venue.id,
     name: venue.name,
-    tagline: venue.verified ? "Verified venue" : "Community venue",
+    tagline: "Venue profile",
     description: venue.description?.trim() || "Venue profile details are available on event pages.",
     location,
     image: getCoverImage(venue.cover_image_url, "venue"),
     tags: [venue.zip_code],
-    badge: venue.verified ? "Verified" : "Venue",
+    badge: "Venue",
   };
 }
 

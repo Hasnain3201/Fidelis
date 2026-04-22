@@ -88,7 +88,7 @@ export default async function VenueDetailPage({ params }: VenueDetailPageProps) 
             </div>
 
             <div className="eventDetailCard">
-              <p className="eventDetailType">{venue.verified ? "Verified Venue" : "Venue"}</p>
+              <p className="eventDetailType">Venue</p>
               <h1>{venue.name}</h1>
               <p className="meta">{venue.description?.trim() || "No venue description has been added yet."}</p>
 
@@ -103,7 +103,7 @@ export default async function VenueDetailPage({ params }: VenueDetailPageProps) 
                 </div>
                 <div className="eventMetaItem">
                   <strong>Status</strong>
-                  <span>{venue.verified ? "Verified" : "Community Venue"}</span>
+                  <span>Venue profile</span>
                 </div>
                 <div className="eventMetaItem">
                   <strong>Upcoming Events</strong>
@@ -112,7 +112,7 @@ export default async function VenueDetailPage({ params }: VenueDetailPageProps) 
               </div>
 
               <div className="tagRow">
-                <span className="tagPill">{venue.verified ? "Verified" : "Venue"}</span>
+                <span className="tagPill">Venue</span>
                 <span className="tagPill">{venue.zip_code}</span>
               </div>
 

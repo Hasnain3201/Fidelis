@@ -110,6 +110,14 @@ export type UpdateMyArtistPayload = {
   cover_image_url?: string | null;
 };
 
+export type CreateMyArtistPayload = {
+  stage_name: string;
+  genre?: string | null;
+  bio?: string | null;
+  media_url?: string | null;
+  cover_image_url?: string | null;
+};
+
 export type ArtistEventSummary = {
   id: string;
   title: string;
@@ -232,6 +240,16 @@ export type UpdateMyVenuePayload = {
   city?: string | null;
   state?: string | null;
   zip_code?: string;
+  cover_image_url?: string | null;
+};
+
+export type CreateMyVenuePayload = {
+  name: string;
+  description?: string | null;
+  address_line?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip_code: string;
   cover_image_url?: string | null;
 };
 
@@ -619,6 +637,20 @@ export async function getMyVenue(session: AuthSession): Promise<VenueProfileResp
   return fetchApi<VenueProfileResponse>("/api/v1/venues/mine", { session });
 }
 
+export async function createMyVenue(
+  payload: CreateMyVenuePayload,
+  session: AuthSession,
+): Promise<VenueProfileResponse> {
+  return fetchApi<VenueProfileResponse>("/api/v1/venues/mine", {
+    method: "POST",
+    session,
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function updateMyVenue(
   payload: UpdateMyVenuePayload,
   session: AuthSession,
@@ -635,6 +667,20 @@ export async function updateMyVenue(
 
 export async function getMyArtist(session: AuthSession): Promise<ArtistProfileResponse> {
   return fetchApi<ArtistProfileResponse>("/api/v1/artists/mine", { session });
+}
+
+export async function createMyArtist(
+  payload: CreateMyArtistPayload,
+  session: AuthSession,
+): Promise<ArtistProfileResponse> {
+  return fetchApi<ArtistProfileResponse>("/api/v1/artists/mine", {
+    method: "POST",
+    session,
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function updateMyArtist(
