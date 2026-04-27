@@ -44,6 +44,7 @@ class QueueService:
         mode: str,
         *,
         enable_render: bool = False,
+        multi_page: bool = False,
         dry_run: bool = False,
         venue_id_hint: str | None = None,
         priority: int = 0,
@@ -71,6 +72,7 @@ class QueueService:
                 "mode": mode,
                 "status": "pending",
                 "enable_render": enable_render,
+                "multi_page": multi_page,
                 "dry_run": dry_run,
                 "venue_id_hint": venue_id_hint,
                 "priority": priority,
@@ -100,9 +102,25 @@ class QueueService:
             query = query.eq("status", status)
         if batch_id:
             query = query.eq("batch_id", batch_id)
+        # Finished jobs: most recently finished first. Active jobs: by when queued.
+        if status in ("completed", "failed"):
+            query = query.order("completed_at", desc=True, nullsfirst=False)
         query = query.order("created_at", desc=True).limit(limit)
         resp = query.execute()
         return resp.data or []
+
+    def count_by_status(self) -> dict[str, int]:
+        """Total row counts per status — used by the UI to show truncation."""
+        out: dict[str, int] = {s: 0 for s in VALID_STATUSES}
+        for s in VALID_STATUSES:
+            resp = (
+                self._client.table("scrape_jobs")
+                .select("id", count="exact", head=True)
+                .eq("status", s)
+                .execute()
+            )
+            out[s] = resp.count or 0
+        return out
 
     def get_job(self, job_id: str) -> dict | None:
         resp = (
@@ -233,6 +251,7 @@ class QueueService:
             "mode": existing["mode"],
             "status": "pending",
             "enable_render": existing.get("enable_render", False),
+            "multi_page": existing.get("multi_page", False),
             "dry_run": existing.get("dry_run", False),
             "venue_id_hint": existing.get("venue_id_hint"),
             "priority": existing.get("priority", 0),

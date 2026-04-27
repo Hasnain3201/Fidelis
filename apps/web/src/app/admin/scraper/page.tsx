@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getStoredAuthSession } from "@/lib/auth";
 import { ContentPreviewPanel, type ContentPreview } from "./components/ContentPreviewPanel";
+import DiscoveryPanel from "./components/DiscoveryPanel";
 import QueueDashboard from "./components/QueueDashboard";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -74,6 +75,8 @@ export default function AdminScraperPage() {
               fetches a single page without calling the AI.
             </p>
           </div>
+
+          <DiscoveryPanel />
 
           <QueueDashboard />
 

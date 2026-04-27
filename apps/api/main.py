@@ -10,8 +10,7 @@ from app.services.scraper.worker import start_worker, stop_worker
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Boot the in-process scrape worker so it can drain scrape_jobs.
-    await start_worker()
+    # Worker is started manually by the admin via POST /api/v1/scraper/worker/start.
     try:
         yield
     finally:

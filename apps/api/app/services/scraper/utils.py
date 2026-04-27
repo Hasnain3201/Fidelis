@@ -44,6 +44,23 @@ def _coerce_dict(val: Any) -> dict:
     return {}
 
 
+def _normalize_zip(raw: Any) -> str | None:
+    """Extract a clean 5-digit ZIP from AI output.
+
+    Handles: None, empty string, ZIP+4 ("10011-4321" → "10011"),
+    strings with leading/trailing spaces, or non-numeric junk.
+    """
+    if not raw:
+        return None
+    s = str(raw).strip()
+    # Prefer first 5-digit run (covers ZIP+4 and similar formats)
+    m = re.match(r"(\d{5})", s)
+    if m:
+        return m.group(1)
+    # If no clean 5-digit prefix, truncate to 5 chars so char(5) never overflows
+    return s[:5] if s else None
+
+
 def _coerce_int(val: Any) -> int | None:
     if val is None:
         return None
@@ -88,7 +105,7 @@ def map_venue_to_supabase(venue_data: dict, source_url: str | None = None) -> di
         "address_line": addr.get("street") or "",
         "city": addr.get("city") or "",
         "state": addr.get("state") or "",
-        "zip_code": addr.get("zip_code") or None,
+        "zip_code": _normalize_zip(addr.get("zip_code")),
         "website": venue_data.get("website") or None,
         "phone": venue_data.get("phone_number") or venue_data.get("phone") or None,
         "email": venue_data.get("email") or None,
@@ -148,7 +165,7 @@ def map_event_to_supabase(
         "venue_id": venue_id,
         "venue_name": ev_venue_name or None,
         "category": category,
-        "zip_code": event_data.get("zip_code") or None,
+        "zip_code": _normalize_zip(event_data.get("zip_code")),
         "ticket_url": event_data.get("ticket_url") or None,
         "target_audience": event_data.get("target_audience") or "All Ages",
         "types": types,

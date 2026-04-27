@@ -40,13 +40,22 @@ def _run_job(job: dict) -> dict:
     url = job["url"]
     mode = job["mode"]
     enable_render = bool(job.get("enable_render", False))
+    multi_page = bool(job.get("multi_page", False))
     dry_run = bool(job.get("dry_run", False))
     venue_id_hint = job.get("venue_id_hint")
 
     scraper = ScraperService()
-    raw = scraper.extract_venue_data(url, enable_render=enable_render)
+    raw = scraper.extract_venue_data(url, enable_render=enable_render, multi_page=multi_page, mode=mode)
     if "error" in raw:
-        raise RuntimeError(f"fetch_failed: {raw['error']}")
+        # The scrape ran but the URL is unreachable (404, DNS, timeout, etc.).
+        # Mark as completed-but-unreachable rather than failed: the worker did its job.
+        return {
+            "mode": mode,
+            "dry_run": dry_run,
+            "unreachable": True,
+            "reason": raw["error"],
+            "content_preview": None,
+        }
 
     content_preview = build_content_preview(raw)
 
@@ -191,11 +200,27 @@ class ScrapeWorker:
     def __init__(self) -> None:
         self._task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
+        self._max_jobs: Optional[int] = None
+        self._jobs_processed: int = 0
 
-    async def start(self) -> None:
+    @property
+    def is_running(self) -> bool:
+        return self._task is not None and not self._task.done()
+
+    @property
+    def jobs_processed(self) -> int:
+        return self._jobs_processed
+
+    @property
+    def max_jobs(self) -> Optional[int]:
+        return self._max_jobs
+
+    async def start(self, max_jobs: Optional[int] = None) -> bool:
         if self._task and not self._task.done():
-            return
+            return False
         self._stop_event.clear()
+        self._jobs_processed = 0
+        self._max_jobs = max_jobs
         # Reset stale in_progress jobs from any previous run.
         try:
             from app.services.scraper.queue_service import QueueService
@@ -207,7 +232,8 @@ class ScrapeWorker:
             logger.warning("Failed to reset stale scrape jobs", exc_info=True)
 
         self._task = asyncio.create_task(self._run_loop(), name="scrape-worker")
-        logger.info("Scrape worker started")
+        logger.info("Scrape worker started (max_jobs=%s)", max_jobs)
+        return True
 
     async def stop(self) -> None:
         self._stop_event.set()
@@ -238,6 +264,7 @@ class ScrapeWorker:
             job_id = job["id"]
             logger.info("Scrape worker picked up job %s (%s %s)", job_id, job["mode"], job["url"])
 
+            job_processed = False
             try:
                 result = await asyncio.to_thread(_run_job, job)
                 content_preview = result.pop("content_preview", None) if isinstance(result, dict) else None
@@ -254,6 +281,15 @@ class ScrapeWorker:
                     await asyncio.to_thread(queue.mark_failed, job_id, str(exc))
                 except Exception:
                     logger.exception("Also failed to record failure for job %s", job_id)
+            finally:
+                job_processed = True
+
+            if job_processed:
+                self._jobs_processed += 1
+                if self._max_jobs is not None and self._jobs_processed >= self._max_jobs:
+                    logger.info("Scrape worker reached max_jobs=%d; stopping.", self._max_jobs)
+                    self._stop_event.set()
+                    break
 
     async def _sleep_or_stop(self, seconds: float) -> None:
         try:
@@ -272,8 +308,8 @@ def get_worker() -> ScrapeWorker:
     return _worker
 
 
-async def start_worker() -> None:
-    await get_worker().start()
+async def start_worker(max_jobs: Optional[int] = None) -> bool:
+    return await get_worker().start(max_jobs=max_jobs)
 
 
 async def stop_worker() -> None:

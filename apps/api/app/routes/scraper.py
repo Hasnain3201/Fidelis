@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, HttpUrl
 
 from app.core.auth import AuthContext, require_role
@@ -24,12 +24,14 @@ _admin = Depends(require_role("admin"))
 class ScrapeVenueRequest(BaseModel):
     url: HttpUrl
     enable_render: bool = False
+    multi_page: bool = False
 
 
 class ScrapeEventsRequest(BaseModel):
     url: HttpUrl
     venue_id: Optional[str] = None
     enable_render: bool = False
+    multi_page: bool = False
 
 
 class ScrapeResult(BaseModel):
@@ -57,6 +59,22 @@ class ScrapePreviewResponse(BaseModel):
     success: bool
     content_preview: dict
     detail: str | None = None
+
+
+class WorkerStatusResponse(BaseModel):
+    is_running: bool
+    jobs_processed: int
+    max_jobs: Optional[int] = None
+
+
+class WorkerStartRequest(BaseModel):
+    max_jobs: Optional[int] = Field(None, ge=1)
+
+
+class WorkerStartResponse(BaseModel):
+    started: bool
+    is_running: bool
+    max_jobs: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +115,7 @@ def scrape_venue(
     url = str(body.url)
 
     scraper = ScraperService()
-    raw = scraper.extract_venue_data(url, enable_render=body.enable_render)
+    raw = scraper.extract_venue_data(url, enable_render=body.enable_render, multi_page=body.multi_page, mode="venue")
     if "error" in raw:
         raise HTTPException(status_code=502, detail=raw["error"])
 
@@ -167,7 +185,7 @@ def scrape_events(
     url = str(body.url)
 
     scraper = ScraperService()
-    raw = scraper.extract_venue_data(url, enable_render=body.enable_render)
+    raw = scraper.extract_venue_data(url, enable_render=body.enable_render, multi_page=body.multi_page, mode="events")
     if "error" in raw:
         raise HTTPException(status_code=502, detail=raw["error"])
 
@@ -260,6 +278,7 @@ class EnqueueBatchRequest(BaseModel):
     urls: list[str] = Field(..., min_length=1)
     mode: Literal["venue", "events"]
     enable_render: bool = False
+    multi_page: bool = False
     dry_run: bool = False
     venue_id: Optional[str] = None  # only meaningful for events mode
 
@@ -288,6 +307,7 @@ def enqueue_scrape_batch(
             urls=body.urls,
             mode=body.mode,
             enable_render=body.enable_render,
+            multi_page=body.multi_page,
             dry_run=body.dry_run,
             venue_id_hint=body.venue_id,
             created_by=auth.user_id,
@@ -316,6 +336,14 @@ def list_scrape_jobs(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return JobListResponse(jobs=jobs, count=len(jobs))
+
+
+@router.get("/queue/counts")
+def queue_counts(auth: AuthContext = _admin) -> dict[str, int]:
+    """Total row counts per status — used by the UI to show truncation."""
+    from app.services.scraper.queue_service import QueueService
+
+    return QueueService().count_by_status()
 
 
 @router.get("/queue/{job_id}")
@@ -370,6 +398,53 @@ def clear_scrape_queue(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"success": True, "deleted": deleted}
+
+
+# ---------------------------------------------------------------------------
+# Worker control endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/worker/status", response_model=WorkerStatusResponse)
+async def get_worker_status(auth: AuthContext = _admin) -> WorkerStatusResponse:
+    """Return the current state of the in-process scrape worker."""
+    from app.services.scraper.worker import get_worker
+
+    w = get_worker()
+    return WorkerStatusResponse(
+        is_running=w.is_running,
+        jobs_processed=w.jobs_processed,
+        max_jobs=w.max_jobs,
+    )
+
+
+@router.post("/worker/start", response_model=WorkerStartResponse)
+async def start_worker_endpoint(
+    body: Optional[WorkerStartRequest] = Body(default=None),
+    auth: AuthContext = _admin,
+) -> WorkerStartResponse:
+    """Start the scrape worker. No-op if already running.
+    Pass max_jobs to auto-stop after N jobs (stop first to change a running limit)."""
+    from app.services.scraper.worker import get_worker
+
+    w = get_worker()
+    max_jobs = body.max_jobs if body else None
+    started = await w.start(max_jobs=max_jobs)
+    return WorkerStartResponse(started=started, is_running=w.is_running, max_jobs=w.max_jobs)
+
+
+@router.post("/worker/stop", response_model=WorkerStatusResponse)
+async def stop_worker_endpoint(auth: AuthContext = _admin) -> WorkerStatusResponse:
+    """Stop the scrape worker gracefully (waits up to 10s for current job)."""
+    from app.services.scraper.worker import get_worker
+
+    w = get_worker()
+    await w.stop()
+    return WorkerStatusResponse(
+        is_running=w.is_running,
+        jobs_processed=w.jobs_processed,
+        max_jobs=w.max_jobs,
+    )
 
 
 # ---------------------------------------------------------------------------

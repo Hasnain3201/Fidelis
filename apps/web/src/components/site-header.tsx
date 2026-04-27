@@ -19,8 +19,6 @@ function getDashboardHref(session: AuthSession): string {
 
 const ADMIN_NAV_ITEMS = [
   { href: "/admin/scraper", label: "Scraper" },
-  { href: "/admin/external-events", label: "External APIs" },
-  { href: "/admin/discovery", label: "Discovery" },
 ];
 
 export function SiteHeader() {
