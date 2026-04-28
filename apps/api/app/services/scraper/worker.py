@@ -40,7 +40,7 @@ def _run_job(job: dict) -> dict:
     url = job["url"]
     mode = job["mode"]
     enable_render = bool(job.get("enable_render", False))
-    multi_page = bool(job.get("multi_page", False))
+    multi_page = bool(job.get("multi_page", True))
     dry_run = bool(job.get("dry_run", False))
     venue_id_hint = job.get("venue_id_hint")
 
@@ -202,6 +202,8 @@ class ScrapeWorker:
         self._stop_event = asyncio.Event()
         self._max_jobs: Optional[int] = None
         self._jobs_processed: int = 0
+        self._current_url: Optional[str] = None
+        self._current_mode: Optional[str] = None
 
     @property
     def is_running(self) -> bool:
@@ -214,6 +216,14 @@ class ScrapeWorker:
     @property
     def max_jobs(self) -> Optional[int]:
         return self._max_jobs
+
+    @property
+    def current_url(self) -> Optional[str]:
+        return self._current_url
+
+    @property
+    def current_mode(self) -> Optional[str]:
+        return self._current_mode
 
     async def start(self, max_jobs: Optional[int] = None) -> bool:
         if self._task and not self._task.done():
@@ -263,6 +273,8 @@ class ScrapeWorker:
 
             job_id = job["id"]
             logger.info("Scrape worker picked up job %s (%s %s)", job_id, job["mode"], job["url"])
+            self._current_url = job.get("url")
+            self._current_mode = job.get("mode")
 
             job_processed = False
             try:
@@ -283,6 +295,8 @@ class ScrapeWorker:
                     logger.exception("Also failed to record failure for job %s", job_id)
             finally:
                 job_processed = True
+                self._current_url = None
+                self._current_mode = None
 
             if job_processed:
                 self._jobs_processed += 1

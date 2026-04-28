@@ -24,14 +24,14 @@ _admin = Depends(require_role("admin"))
 class ScrapeVenueRequest(BaseModel):
     url: HttpUrl
     enable_render: bool = False
-    multi_page: bool = False
+    multi_page: bool = True
 
 
 class ScrapeEventsRequest(BaseModel):
     url: HttpUrl
     venue_id: Optional[str] = None
     enable_render: bool = False
-    multi_page: bool = False
+    multi_page: bool = True
 
 
 class ScrapeResult(BaseModel):
@@ -65,6 +65,8 @@ class WorkerStatusResponse(BaseModel):
     is_running: bool
     jobs_processed: int
     max_jobs: Optional[int] = None
+    current_url: Optional[str] = None
+    current_mode: Optional[str] = None
 
 
 class WorkerStartRequest(BaseModel):
@@ -278,7 +280,7 @@ class EnqueueBatchRequest(BaseModel):
     urls: list[str] = Field(..., min_length=1)
     mode: Literal["venue", "events"]
     enable_render: bool = False
-    multi_page: bool = False
+    multi_page: bool = True
     dry_run: bool = False
     venue_id: Optional[str] = None  # only meaningful for events mode
 
@@ -364,13 +366,30 @@ def rescrape_scrape_job(
     job_id: str,
     auth: AuthContext = _admin,
 ) -> dict:
+    """Re-run an existing scrape job synchronously (in-place) and return the updated row.
+
+    Unlike enqueue, this does NOT create a new queue entry — it updates the existing
+    row's status, result, and content_preview so the UI shows fresh data on the same card.
+    """
     from app.services.scraper.queue_service import QueueService
+    from app.services.scraper.worker import _run_job
+
+    queue = QueueService()
+    job = queue.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
     try:
-        new_job = QueueService().rescrape(job_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    return {"success": True, "job": new_job}
+        result = _run_job(job)
+        content_preview = result.pop("content_preview", None) if isinstance(result, dict) else None
+        queue.mark_completed(job_id, result=result, content_preview=content_preview)
+    except Exception as exc:
+        queue.mark_failed(job_id, str(exc))
+        updated = queue.get_job(job_id)
+        return {"success": False, "job": updated, "error": str(exc)}
+
+    updated = queue.get_job(job_id)
+    return {"success": True, "job": updated}
 
 
 @router.delete("/queue/{job_id}")
@@ -415,6 +434,8 @@ async def get_worker_status(auth: AuthContext = _admin) -> WorkerStatusResponse:
         is_running=w.is_running,
         jobs_processed=w.jobs_processed,
         max_jobs=w.max_jobs,
+        current_url=w.current_url,
+        current_mode=w.current_mode,
     )
 
 
@@ -444,6 +465,8 @@ async def stop_worker_endpoint(auth: AuthContext = _admin) -> WorkerStatusRespon
         is_running=w.is_running,
         jobs_processed=w.jobs_processed,
         max_jobs=w.max_jobs,
+        current_url=w.current_url,
+        current_mode=w.current_mode,
     )
 
 

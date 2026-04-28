@@ -1,7 +1,13 @@
 """Orchestrates HTML fetching and structured-data extraction."""
 
+from . import config as cfg
 from .html_extractor import HTMLExtractor
 from .structured_data_extractor import StructuredDataExtractor
+
+
+def _dprint(msg: str) -> None:
+    if cfg.DEBUG_PRINTS:
+        print(msg)
 
 
 class ScraperService:
@@ -15,10 +21,15 @@ class ScraperService:
         self,
         url: str,
         enable_render: bool = False,
-        multi_page: bool = False,
+        multi_page: bool = True,
         mode: str = "venue",
     ) -> dict:
         try:
+            requested_multi_page = multi_page
+            multi_page = bool(cfg.MULTI_PAGE_ENABLED)
+            if multi_page != requested_multi_page:
+                _dprint(f"[Scraper] config.MULTI_PAGE_ENABLED={multi_page} overrides requested={requested_multi_page}")
+            _dprint(f"[Scraper] extract_venue_data url={url} mode={mode} multi_page={multi_page} enable_render={enable_render}")
             html_data = self.html_extractor.fetch_page(url, enable_render)
             if "error" in html_data:
                 return html_data
@@ -26,6 +37,7 @@ class ScraperService:
             structured = self.structured_extractor.extract(html_data["soup"])
 
             if multi_page:
+                _dprint(f"[Scraper] multi_page=True; running MultiPageScraper for {url}")
                 from .multi_page_scraper import MultiPageScraper
                 mp = MultiPageScraper()
                 additional_urls = mp.discover_pages(url, html_data["soup"], mode)
@@ -33,7 +45,9 @@ class ScraperService:
                 text_content = mp.combine_pages(html_data, additional_pages, mode)
                 phones, emails = mp.merge_phones_emails(html_data, additional_pages)
                 pages_visited = [url] + [p["url"] for p in additional_pages]
+                _dprint(f"[Scraper] pages_visited={pages_visited}")
             else:
+                _dprint(f"[Scraper] multi_page=False; single-page only")
                 text_content = html_data["text_content"]
                 phones = html_data["phones"]
                 emails = html_data["emails"]

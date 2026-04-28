@@ -25,12 +25,17 @@ from .html_extractor import HTMLExtractor
 
 logger = logging.getLogger(__name__)
 
+
+def _dprint(msg: str) -> None:
+    if cfg.DEBUG_PRINTS:
+        print(msg)
+
 MAX_PAGES = 5               # 1 primary + up to 4 additional
 PAGE_BUDGET_SECONDS = 25    # wall-clock budget for all secondary fetches
 HEAD_TIMEOUT = 5            # HEAD probe per heuristic path
 FETCH_TIMEOUT = 12          # GET per secondary page
-MAX_TEXT_PER_PAGE = 15_000  # chars kept per secondary page before concat
-MAX_COMBINED_CHARS = 60_000 # total combined text cap
+MAX_TEXT_PER_PAGE = 8_000   # chars kept per secondary page before concat
+MAX_COMBINED_CHARS = 24_000 # total combined text cap (~6k tokens — fits free-tier AI quotas)
 
 _VENUE_KEYWORD_SCORES: dict[str, int] = {
     "about": 10, "about-us": 10, "contact": 10, "contact-us": 10,
@@ -115,7 +120,9 @@ class MultiPageScraper:
 
         ranked = sorted(candidates.items(), key=lambda kv: kv[1], reverse=True)
         top = [url for url, _ in ranked[: MAX_PAGES - 1]]
-        logger.debug("MultiPageScraper discovered %d candidate pages for %s: %s", len(top), base_url, top)
+        _dprint(f"[MultiPage] discover_pages({mode}) for {base_url}: {len(candidates)} total candidates, top {len(top)} selected")
+        for url, score in ranked[: MAX_PAGES - 1]:
+            _dprint(f"[MultiPage]   -> score={score} {url}")
         return top
 
     def fetch_additional_pages(
@@ -127,14 +134,26 @@ class MultiPageScraper:
         results: list[dict] = []
         deadline = time.monotonic() + PAGE_BUDGET_SECONDS
 
+        if not urls:
+            _dprint("[MultiPage] fetch_additional_pages: no URLs to fetch")
+            return results
+
+        _dprint(f"[MultiPage] fetch_additional_pages: fetching {len(urls)} pages (budget={PAGE_BUDGET_SECONDS}s)")
         for url in urls:
             if time.monotonic() >= deadline:
-                logger.debug("MultiPageScraper: time budget exhausted, stopping at %d/%d pages", len(results), len(urls))
+                _dprint(f"[MultiPage]   time budget exhausted, stopping at {len(results)}/{len(urls)} pages")
                 break
+            t0 = time.monotonic()
             page = self._fetch_page_simple(url, enable_render=enable_render)
+            elapsed = time.monotonic() - t0
             if page:
+                text_len = len(page.get("text_content", ""))
+                _dprint(f"[MultiPage]   OK  ({elapsed:.2f}s, {text_len} chars) {url}")
                 results.append(page)
+            else:
+                _dprint(f"[MultiPage]   SKIP ({elapsed:.2f}s) {url}")
 
+        _dprint(f"[MultiPage] fetch_additional_pages: completed {len(results)}/{len(urls)} pages")
         return results
 
     @staticmethod
@@ -160,6 +179,7 @@ class MultiPageScraper:
         combined = "\n\n".join(parts)
         if len(combined) > MAX_COMBINED_CHARS:
             combined = combined[:MAX_COMBINED_CHARS]
+        _dprint(f"[MultiPage] combine_pages({mode}): combined {1 + len(additional_pages)} pages into {len(combined)} chars")
         return combined
 
     @staticmethod

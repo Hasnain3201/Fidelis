@@ -369,6 +369,8 @@ export default function QueueDashboard() {
   const [workerRunning, setWorkerRunning] = useState<boolean | null>(null);
   const [workerJobsProcessed, setWorkerJobsProcessed] = useState(0);
   const [workerMaxJobs, setWorkerMaxJobs] = useState<number | null>(null);
+  const [workerCurrentUrl, setWorkerCurrentUrl] = useState<string | null>(null);
+  const [workerCurrentMode, setWorkerCurrentMode] = useState<string | null>(null);
   const [maxJobsInput, setMaxJobsInput] = useState("");
   const [workerActionPending, setWorkerActionPending] = useState(false);
 
@@ -456,10 +458,14 @@ export default function QueueDashboard() {
         is_running: boolean;
         jobs_processed: number;
         max_jobs: number | null;
+        current_url: string | null;
+        current_mode: string | null;
       };
       setWorkerRunning(data.is_running);
       setWorkerJobsProcessed(data.jobs_processed);
       setWorkerMaxJobs(data.max_jobs);
+      setWorkerCurrentUrl(data.current_url ?? null);
+      setWorkerCurrentMode(data.current_mode ?? null);
     } catch {
       // swallow
     }
@@ -774,8 +780,8 @@ export default function QueueDashboard() {
       {/* Card 2: Worker Controls + Recent Results */}
       <div className="card" style={{ padding: 24 }}>
         {/* Worker status row */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
-          <div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <h2 style={{ margin: "0 0 6px 0" }}>Worker</h2>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span
@@ -792,45 +798,85 @@ export default function QueueDashboard() {
                 </span>
               )}
             </div>
+            {workerRunning && workerCurrentUrl && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: "8px 12px",
+                  background: "rgba(20, 184, 125, 0.08)",
+                  border: "1px solid rgba(20, 184, 125, 0.25)",
+                  borderRadius: 8,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  maxWidth: 600,
+                }}
+              >
+                <span
+                  style={{
+                    width: 6, height: 6, borderRadius: "50%",
+                    background: "#14b87d", flexShrink: 0,
+                  }}
+                />
+                <span style={{ fontSize: 11, fontWeight: 600, color: "#14b87d", flexShrink: 0 }}>
+                  Scraping {workerCurrentMode}:
+                </span>
+                <span
+                  style={{
+                    fontSize: 12,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    minWidth: 0,
+                  }}
+                  title={workerCurrentUrl}
+                >
+                  {workerCurrentUrl}
+                </span>
+              </div>
+            )}
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <input
-              type="number"
-              min={1}
-              value={maxJobsInput}
-              onChange={(e) => setMaxJobsInput(e.target.value)}
-              placeholder="Max websites"
-              style={{
-                width: 130, padding: "6px 10px", borderRadius: 8,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(255,255,255,0.04)",
-                color: "inherit", fontSize: 13,
-              }}
-            />
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 12, fontWeight: 500, color: "#94a3b8" }}>
+                Max websites
+              </span>
+              <input
+                type="number"
+                min={1}
+                value={maxJobsInput}
+                onChange={(e) => setMaxJobsInput(e.target.value)}
+                placeholder="no limit"
+                disabled={workerRunning === true}
+                style={{
+                  width: 150, padding: "8px 12px", borderRadius: 8,
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  background: workerRunning === true
+                    ? "rgba(255,255,255,0.02)"
+                    : "rgba(255,255,255,0.06)",
+                  color: "inherit", fontSize: 13,
+                  opacity: workerRunning === true ? 0.5 : 1,
+                }}
+              />
+            </label>
             <Button
               type="button"
-              variant="primary"
-              disabled={workerRunning === true || workerActionPending}
-              onClick={() => void handleWorkerStart()}
+              variant={workerRunning ? "secondary" : "primary"}
+              disabled={workerRunning === null || workerActionPending}
+              onClick={() => void (workerRunning ? handleWorkerStop() : handleWorkerStart())}
+              style={workerRunning ? { color: "#e74c3c" } : undefined}
             >
-              {workerActionPending && workerRunning !== true ? "Starting..." : "Start Scraping"}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={workerRunning !== true || workerActionPending}
-              onClick={() => void handleWorkerStop()}
-              style={{ color: "#e74c3c" }}
-            >
-              {workerActionPending && workerRunning === true ? "Stopping..." : "Stop"}
+              {workerActionPending
+                ? (workerRunning ? "Stopping..." : "Starting...")
+                : (workerRunning ? "Stop Scraping" : "Start Scraping")}
             </Button>
           </div>
         </div>
 
         {workerRunning === false && (
           <p className="meta" style={{ margin: "10px 0 0 0", fontSize: 12 }}>
-            Worker is stopped. Optionally enter a max websites limit then click Start Scraping.
+            Worker is stopped. Leave Max websites blank to scrape every job in the queue, or set a number to auto-stop after that many.
           </p>
         )}
 
