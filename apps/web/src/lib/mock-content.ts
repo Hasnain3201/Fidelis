@@ -1,3 +1,8 @@
+/*
+ * Mock content is intentionally kept in-repo for offline/manual testing.
+ * It is not imported by the production data flow; all active screens now use backend APIs.
+ */
+
 export type EventItem = {
   id: string;
   title: string;
@@ -96,7 +101,7 @@ export const EVENT_ITEMS: EventItem[] = [
     venue: "Warehouse 54",
     price: "$20 cover",
     image:
-      "https://images.unsplash.com/photo-1571266028243-d220c9fe95a3?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1496024840928-4c417adf211d?auto=format&fit=crop&w=900&q=80",
     tags: ["DJ Set", "Dance Party", "House"],
   },
   {
@@ -206,7 +211,7 @@ export const VENUE_ITEMS: VenueItem[] = [
     description: "A cozy and modern space featuring top DJs and curated live sets.",
     location: "Dallas, TX",
     image:
-      "https://images.unsplash.com/photo-1566737236500-c8ac43014a8e?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=900&q=80",
     tags: ["Food", "Live Stage"],
     badge: "Bar/Pub",
   },
@@ -328,7 +333,7 @@ export const ARTIST_ITEMS: ArtistItem[] = [
     location: "Houston, TX",
     description: "Electronic music producer and DJ specializing in house and techno.",
     image:
-      "https://images.unsplash.com/photo-1571266028243-d220c9fe95a3?auto=format&fit=crop&w=900&q=80",
+      "https://images.unsplash.com/photo-1496024840928-4c417adf211d?auto=format&fit=crop&w=900&q=80",
     tags: ["EDM", "House", "Techno"],
     badge: "DJ",
   },

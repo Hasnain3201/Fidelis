@@ -60,4 +60,4 @@ npm run dev:api
 ```
 
 - Web: `http://localhost:3000`
-- API docs: `http://localhost:8000/docs`
+- API docs: `https://fidelisappsapi-production.up.railway.app/docs`

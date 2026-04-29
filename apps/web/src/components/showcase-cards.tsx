@@ -1,8 +1,46 @@
 import Image from "next/image";
 import Link from "next/link";
-import type { ArtistItem, EventItem, VenueItem } from "@/lib/mock-content";
+import { ArtistFollowButton } from "@/components/artist-follow-button";
+import { VenueFollowButton } from "@/components/venue-follow-button";
 
-export function EventShowcaseCard({ item }: { item: EventItem }) {
+export type EventCardItem = {
+  id: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  dateLabel: string;
+  timeLabel: string;
+  zipCode: string;
+  location: string;
+  venue: string;
+  price: string;
+  image: string;
+  tags: string[];
+  badge?: string;
+};
+
+export type VenueCardItem = {
+  id: string;
+  name: string;
+  tagline: string;
+  description: string;
+  location: string;
+  image: string;
+  tags?: string[];
+  badge?: string;
+};
+
+export type ArtistCardItem = {
+  id: string;
+  name: string;
+  location: string;
+  description: string;
+  image: string;
+  tags?: string[];
+  badge?: string;
+};
+
+export function EventShowcaseCard({ item }: { item: EventCardItem }) {
   return (
     <article className="showCard">
       <Link href={`/events/${item.id}`} className="showCardLink" aria-label={`Open ${item.title} details`}>
@@ -39,60 +77,64 @@ export function EventShowcaseCard({ item }: { item: EventItem }) {
   );
 }
 
-export function VenueCard({ item }: { item: VenueItem }) {
+export function VenueCard({ item }: { item: VenueCardItem }) {
   return (
     <article className="showCard compactCard">
       <div className="mediaWrap">
-        <Image src={item.image} alt={item.name} fill sizes="(max-width: 760px) 100vw, (max-width: 1080px) 50vw, 33vw" />
-        {item.badge ? <span className="pillTop">{item.badge}</span> : null}
-        <button className="followBtn" type="button">
-          Follow
-        </button>
+        <Link href={`/venues/${item.id}`} className="showCardLink" aria-label={`Open ${item.name} details`}>
+          <Image src={item.image} alt={item.name} fill sizes="(max-width: 760px) 100vw, (max-width: 1080px) 50vw, 33vw" />
+          {item.badge ? <span className="pillTop">{item.badge}</span> : null}
+        </Link>
+        <VenueFollowButton venueId={item.id} />
       </div>
 
-      <div className="cardBody">
-        <h3>{item.name}</h3>
-        <p className="subline">{item.tagline}</p>
-        <p>{item.description}</p>
+      <Link href={`/venues/${item.id}`} className="showCardLink" aria-label={`Open ${item.name} details`}>
+        <div className="cardBody">
+          <h3>{item.name}</h3>
+          <p className="subline">{item.tagline}</p>
+          <p>{item.description}</p>
 
-        <div className="cardMeta">{item.location}</div>
+          <div className="cardMeta">{item.location}</div>
 
-        <div className="tagRow">
-          {item.tags.map((tag) => (
-            <span key={tag} className="tagPill soft">
-              {tag}
-            </span>
-          ))}
+          <div className="tagRow">
+            {(item.tags ?? []).map((tag) => (
+              <span key={tag} className="tagPill soft">
+                {tag}
+              </span>
+            ))}
+          </div>
         </div>
-      </div>
+      </Link>
     </article>
   );
 }
 
-export function ArtistCard({ item }: { item: ArtistItem }) {
+export function ArtistCard({ item }: { item: ArtistCardItem }) {
   return (
     <article className="showCard compactCard">
       <div className="mediaWrap">
-        <Image src={item.image} alt={item.name} fill sizes="(max-width: 760px) 100vw, (max-width: 1080px) 50vw, 33vw" />
-        {item.badge ? <span className="pillTop">{item.badge}</span> : null}
-        <button className="followBtn" type="button">
-          Follow
-        </button>
+        <Link href={`/artists/${item.id}`} className="showCardLink" aria-label={`Open ${item.name} details`}>
+          <Image src={item.image} alt={item.name} fill sizes="(max-width: 760px) 100vw, (max-width: 1080px) 50vw, 33vw" />
+          {item.badge ? <span className="pillTop">{item.badge}</span> : null}
+        </Link>
+        <ArtistFollowButton artistId={item.id} />
       </div>
 
-      <div className="cardBody">
-        <h3>{item.name}</h3>
-        <div className="cardMeta">{item.location}</div>
-        <p>{item.description}</p>
+      <Link href={`/artists/${item.id}`} className="showCardLink" aria-label={`Open ${item.name} details`}>
+        <div className="cardBody">
+          <h3>{item.name}</h3>
+          <div className="cardMeta">{item.location}</div>
+          <p>{item.description}</p>
 
-        <div className="tagRow">
-          {item.tags.map((tag) => (
-            <span key={tag} className="tagPill">
-              {tag}
-            </span>
-          ))}
+          <div className="tagRow">
+            {(item.tags ?? []).map((tag) => (
+              <span key={tag} className="tagPill">
+                {tag}
+              </span>
+            ))}
+          </div>
         </div>
-      </div>
+      </Link>
     </article>
   );
 }

@@ -33,9 +33,14 @@ type SignUpResult = {
   requiresEmailVerification: boolean;
 };
 
+export type SignUpCommunicationPreferences = {
+  emailOptIn: boolean;
+  smsOptIn: boolean;
+};
+
 const AUTH_STORAGE_KEY = "livey.auth.session.v1";
 const AUTH_CHANGE_EVENT = "livey-auth-changed";
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://fidelisappsapi-production.up.railway.app";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
@@ -109,13 +114,12 @@ async function getJsonOrThrow<T>(response: Response): Promise<T> {
   return parsed as T;
 }
 
-async function resolveUserRole(userId: string, accessToken: string): Promise<UserRole> {
+async function resolveUserRole(accessToken: string): Promise<UserRole> {
   try {
     const response = await fetch(`${API_BASE}/api/v1/auth/me`, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "X-User-Id": userId,
       },
       cache: "no-store",
     });
@@ -194,8 +198,6 @@ export function getAuthChangeEventName(): string {
 export function getAuthHeaders(session: AuthSession): Record<string, string> {
   return {
     Authorization: `Bearer ${session.accessToken}`,
-    "X-User-Id": session.userId,
-    "X-User-Role": session.role,
   };
 }
 
@@ -218,7 +220,7 @@ export async function signInWithSupabase(email: string, password: string): Promi
     throw new Error("Supabase did not return a valid user id.");
   }
 
-  const resolvedRole = await resolveUserRole(userId, payload.access_token);
+  const resolvedRole = await resolveUserRole(payload.access_token);
   return toSession(payload, resolvedRole);
 }
 
@@ -227,6 +229,7 @@ export async function signUpWithSupabase(
   email: string,
   password: string,
   requestedRole: UserRole,
+  communicationPreferences: SignUpCommunicationPreferences,
 ): Promise<SignUpResult> {
   const response = await fetch(`${API_BASE}/api/v1/auth/signup`, {
     method: "POST",
@@ -236,6 +239,8 @@ export async function signUpWithSupabase(
       password,
       full_name: fullName,
       role: requestedRole,
+      email_opt_in: communicationPreferences.emailOptIn,
+      sms_opt_in: communicationPreferences.smsOptIn,
     }),
   });
 

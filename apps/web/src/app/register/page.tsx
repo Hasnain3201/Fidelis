@@ -1,13 +1,25 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { signUpWithSupabase } from "@/lib/auth";
+import { GuestAccessPanel } from "@/components/guest-access-panel";
+import {
+  saveAuthSession,
+  signInWithSupabase,
+  signUpWithSupabase,
+  type AuthSession,
+} from "@/lib/auth";
 
 const ACCOUNT_ROLES = ["user", "artist", "venue"] as const;
+type AccountRole = (typeof ACCOUNT_ROLES)[number];
+
+function toAccountRole(value: string | null): AccountRole {
+  if (value === "artist" || value === "venue" || value === "user") return value;
+  return "user";
+}
 
 function validateEmail(email: string): string {
   if (!email) return "Email is required.";
@@ -17,25 +29,61 @@ function validateEmail(email: string): string {
 
 function validatePassword(password: string): string {
   if (password.length < 8) return "Password must be at least 8 characters.";
-  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) return "Password needs at least one letter and one number.";
+  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+    return "Password needs at least one letter and one number.";
+  }
   return "";
+}
+
+function getPostSignupDestination(session: AuthSession): string {
+  if (session.role === "user") return "/onboarding";
+  if (session.role === "venue") return "/venues/dashboard";
+  if (session.role === "artist") return "/artists/dashboard";
+  return "/dashboard";
 }
 
 export default function RegisterPage() {
   const router = useRouter();
+
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [role, setRole] = useState<(typeof ACCOUNT_ROLES)[number]>("user");
+  const [role, setRole] = useState<AccountRole>("user");
+  const [emailOptIn, setEmailOptIn] = useState(false);
+  const [smsOptIn, setSmsOptIn] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [statusMessage, setStatusMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const presetRole = toAccountRole(new URLSearchParams(window.location.search).get("role"));
+    setRole((current) => (current === presetRole ? current : presetRole));
+  }, []);
+
+  function setFieldError(field: string, message: string) {
+    setErrors((current) => {
+      if (!message) {
+        if (!(field in current)) return current;
+        const next = { ...current };
+        delete next[field];
+        return next;
+      }
+
+      if (current[field] === message) return current;
+      return { ...current, [field]: message };
+    });
+  }
 
   function validateForm() {
     const nextErrors: Record<string, string> = {};
+
     if (!fullName.trim() || fullName.trim().length < 2) {
       nextErrors.fullName = "Enter your full name.";
     }
@@ -45,8 +93,12 @@ export default function RegisterPage() {
 
     const passwordError = validatePassword(password);
     if (passwordError) nextErrors.password = passwordError;
+
     if (!confirmPassword) nextErrors.confirmPassword = "Confirm your password.";
-    if (confirmPassword && confirmPassword !== password) nextErrors.confirmPassword = "Passwords do not match.";
+    if (confirmPassword && confirmPassword !== password) {
+      nextErrors.confirmPassword = "Passwords do not match.";
+    }
+
     if (!acceptedTerms) nextErrors.terms = "You must accept the terms to continue.";
 
     setErrors(nextErrors);
@@ -56,16 +108,37 @@ export default function RegisterPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatusMessage(null);
+
     if (!validateForm()) return;
+
+    const normalizedEmail = email.trim().toLowerCase();
 
     try {
       setIsSubmitting(true);
-      await signUpWithSupabase(fullName.trim(), email.trim().toLowerCase(), password, role);
+
+      // 1) Create account
+      await signUpWithSupabase(
+        fullName.trim(),
+        normalizedEmail,
+        password,
+        role,
+        {
+          emailOptIn,
+          smsOptIn,
+        },
+      );
+
+      // 2) Auto-sign in right after signup
+      const session = await signInWithSupabase(normalizedEmail, password);
+      saveAuthSession(session);
 
       setPassword("");
       setConfirmPassword("");
-      setStatusMessage({ type: "success", text: "Account created. Please sign in." });
-      router.push("/login");
+      setStatusMessage({ type: "success", text: "Account created. Redirecting..." });
+
+      // 3) Route directly to onboarding (for user role)
+      const destination = getPostSignupDestination(session);
+      router.push(destination);
       router.refresh();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to create account right now.";
@@ -82,13 +155,24 @@ export default function RegisterPage() {
           <h1>Create Account</h1>
           <p className="meta">Register as a user, artist, or venue owner.</p>
 
+          <GuestAccessPanel description="Skip account creation for now and explore public event listings. Sign up later when you want saved features." />
+
           <form className="authForm" onSubmit={handleSubmit} noValidate>
             <Input
               type="text"
               label="Full Name"
               placeholder="Jane Doe"
               value={fullName}
-              onChange={(event) => setFullName(event.target.value.slice(0, 80))}
+              onChange={(event) => {
+                const value = event.target.value.slice(0, 80);
+                setFullName(value);
+                if (errors.fullName) {
+                  setFieldError("fullName", value.trim().length >= 2 ? "" : "Enter your full name.");
+                }
+              }}
+              onBlur={() =>
+                setFieldError("fullName", fullName.trim().length >= 2 ? "" : "Enter your full name.")
+              }
               autoComplete="name"
               aria-invalid={Boolean(errors.fullName)}
               required
@@ -104,7 +188,14 @@ export default function RegisterPage() {
               label="Email"
               placeholder="you@example.com"
               value={email}
-              onChange={(event) => setEmail(event.target.value.slice(0, 160))}
+              onChange={(event) => {
+                const value = event.target.value.slice(0, 160);
+                setEmail(value);
+                if (errors.email) {
+                  setFieldError("email", validateEmail(value.trim().toLowerCase()));
+                }
+              }}
+              onBlur={() => setFieldError("email", validateEmail(email.trim().toLowerCase()))}
               autoComplete="email"
               aria-invalid={Boolean(errors.email)}
               required
@@ -120,7 +211,17 @@ export default function RegisterPage() {
               label="Password"
               placeholder="At least 8 characters"
               value={password}
-              onChange={(event) => setPassword(event.target.value.slice(0, 80))}
+              onChange={(event) => {
+                const value = event.target.value.slice(0, 80);
+                setPassword(value);
+                if (errors.password) {
+                  setFieldError("password", validatePassword(value));
+                }
+                if (errors.confirmPassword && confirmPassword) {
+                  setFieldError("confirmPassword", confirmPassword === value ? "" : "Passwords do not match.");
+                }
+              }}
+              onBlur={() => setFieldError("password", validatePassword(password))}
               autoComplete="new-password"
               aria-invalid={Boolean(errors.password)}
               required
@@ -136,7 +237,23 @@ export default function RegisterPage() {
               label="Confirm Password"
               placeholder="Re-enter password"
               value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value.slice(0, 80))}
+              onChange={(event) => {
+                const value = event.target.value.slice(0, 80);
+                setConfirmPassword(value);
+                if (errors.confirmPassword) {
+                  setFieldError("confirmPassword", value && value === password ? "" : "Passwords do not match.");
+                }
+              }}
+              onBlur={() =>
+                setFieldError(
+                  "confirmPassword",
+                  !confirmPassword
+                    ? "Confirm your password."
+                    : confirmPassword === password
+                      ? ""
+                      : "Passwords do not match.",
+                )
+              }
               autoComplete="new-password"
               aria-invalid={Boolean(errors.confirmPassword)}
               required
@@ -149,15 +266,52 @@ export default function RegisterPage() {
 
             <label className="uiInputWrap">
               <span className="uiInputLabel">Account Role</span>
-              <select className="uiSelect" value={role} onChange={(event) => setRole(event.target.value as (typeof ACCOUNT_ROLES)[number])}>
+              <select
+                className="uiSelect"
+                value={role}
+                onChange={(event) => setRole(event.target.value as AccountRole)}
+              >
                 <option value="user">User</option>
                 <option value="artist">Artist</option>
                 <option value="venue">Venue</option>
               </select>
             </label>
 
+            <fieldset className="authPrefGroup">
+              <legend className="authPrefLegend">Messaging Preferences (Optional)</legend>
+              <p className="authPrefHint">Choose how you want updates from LIVEY.</p>
+
+              <label className="checkItem">
+                <input
+                  type="checkbox"
+                  checked={emailOptIn}
+                  onChange={(event) => setEmailOptIn(event.target.checked)}
+                />
+                Email me about new events, giveaways, and feature updates.
+              </label>
+
+              <label className="checkItem">
+                <input
+                  type="checkbox"
+                  checked={smsOptIn}
+                  onChange={(event) => setSmsOptIn(event.target.checked)}
+                />
+                Text me reminders and important event updates.
+              </label>
+            </fieldset>
+
             <label className="checkItem legalCheck">
-              <input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} />
+              <input
+                type="checkbox"
+                checked={acceptedTerms}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setAcceptedTerms(checked);
+                  if (errors.terms) {
+                    setFieldError("terms", checked ? "" : "You must accept the terms to continue.");
+                  }
+                }}
+              />
               I agree to the platform terms and privacy policy.
             </label>
             {errors.terms ? (
@@ -172,11 +326,15 @@ export default function RegisterPage() {
           </form>
 
           {statusMessage ? (
-            <p className={`statusBanner ${statusMessage.type === "success" ? "success" : "error"}`}>{statusMessage.text}</p>
+            <p className={`statusBanner ${statusMessage.type === "success" ? "success" : "error"}`}>
+              {statusMessage.text}
+            </p>
           ) : null}
 
           <p className="authSwitch">
             Already have an account? <Link href="/login">Sign in</Link>
+            <br />
+            Just browsing? <Link href="/search">Continue as guest</Link>
           </p>
         </div>
       </div>

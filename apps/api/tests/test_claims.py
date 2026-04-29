@@ -170,17 +170,17 @@ def test_user_role_cannot_submit_artist_claim(user_client):
     assert resp.status_code == 403
 
 
-# -- Pending claim does not grant venue/artist edit access -----------------
+# -- No managed profile link denies venue/artist edit access ----------------
 
 @patch("app.core.auth.get_managed_venue_ids", return_value=[])
 def test_pending_claim_denied_venue_edit(mock_ids, venue_client):
     resp = venue_client.get("/api/v1/venues/mine")
     assert resp.status_code == 403
-    assert "claim" in resp.json()["detail"].lower()
+    assert "managed venue profile" in resp.json()["detail"].lower()
 
 
 @patch("app.core.auth.get_managed_artist_ids", return_value=[])
 def test_pending_claim_denied_artist_edit(mock_ids, artist_client):
     resp = artist_client.get("/api/v1/artists/mine")
     assert resp.status_code == 403
-    assert "claim" in resp.json()["detail"].lower()
+    assert "managed artist profile" in resp.json()["detail"].lower()

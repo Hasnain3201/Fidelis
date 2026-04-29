@@ -4,11 +4,9 @@ import { type FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { createVenueEvent } from "@/lib/api";
-import { getStoredAuthSession, type AuthSession } from "@/lib/auth";
+import { createVenueEvent, getMyVenue, type VenueProfileResponse } from "@/lib/api";
+import { getAuthChangeEventName, getStoredAuthSession, type AuthSession } from "@/lib/auth";
 import { isValidZipCode, normalizeZipInput } from "@/lib/zip";
-
-type PublishMode = "draft" | "publish";
 
 type CreateEventFormState = {
   title: string;
@@ -42,6 +40,12 @@ const INITIAL_FORM_STATE: CreateEventFormState = {
   capacity: "",
 };
 
+function getRoleDashboardHref(session: AuthSession): string {
+  if (session.role === "artist") return "/artists/dashboard";
+  if (session.role === "user") return "/dashboard";
+  return "/venues/dashboard";
+}
+
 function isSafeHttpUrl(rawUrl: string): boolean {
   try {
     const parsed = new URL(rawUrl);
@@ -67,21 +71,86 @@ function toCategoryLabel(value: string): string {
 
 export default function CreateEventPage() {
   const [session, setSession] = useState<AuthSession | null>(null);
+  const [venueProfile, setVenueProfile] = useState<VenueProfileResponse | null>(null);
+  const [isCheckingAccess, setIsCheckingAccess] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
+
   const [form, setForm] = useState<CreateEventFormState>(INITIAL_FORM_STATE);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
-    setSession(getStoredAuthSession());
+    function syncSession() {
+      setSession(getStoredAuthSession());
+    }
+
+    syncSession();
+
+    const authEvent = getAuthChangeEventName();
+    window.addEventListener("storage", syncSession);
+    window.addEventListener(authEvent, syncSession);
+
+    return () => {
+      window.removeEventListener("storage", syncSession);
+      window.removeEventListener(authEvent, syncSession);
+    };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadVenueAccess(currentSession: AuthSession) {
+      setIsCheckingAccess(true);
+      setAccessError(null);
+
+      try {
+        const profile = await getMyVenue(currentSession);
+        if (cancelled) return;
+
+        setVenueProfile(profile);
+        setForm((current) => ({
+          ...current,
+          venueName: profile.name,
+          zipCode: current.zipCode || profile.zip_code,
+        }));
+      } catch (error) {
+        if (cancelled) return;
+        setVenueProfile(null);
+        const message = error instanceof Error ? error.message : "Unable to load venue profile.";
+        setAccessError(message);
+      } finally {
+        if (!cancelled) {
+          setIsCheckingAccess(false);
+        }
+      }
+    }
+
+    if (!session || session.role !== "venue") {
+      setVenueProfile(null);
+      setAccessError(null);
+      setIsCheckingAccess(false);
+      return;
+    }
+
+    void loadVenueAccess(session);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
   function updateField<K extends keyof CreateEventFormState>(field: K, value: CreateEventFormState[K]) {
     setForm((current) => ({ ...current, [field]: value }));
+    setErrors((current) => {
+      if (!(field in current)) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
   }
 
-  function validateForm(mode: PublishMode) {
+  function validateForm() {
     const nextErrors: Record<string, string> = {};
 
     if (!form.title.trim() || form.title.trim().length < 3) {
@@ -95,7 +164,8 @@ export default function CreateEventPage() {
     if (!form.date) nextErrors.date = "Date is required.";
     if (!form.startTime) nextErrors.startTime = "Start time is required.";
     if (!form.endTime) nextErrors.endTime = "End time is required.";
-    if (!form.venueName.trim()) nextErrors.venueName = "Venue name is required.";
+
+    if (!form.venueName.trim()) nextErrors.venueName = "Venue profile must include a name.";
 
     if (!form.zipCode) {
       nextErrors.zipCode = "ZIP code is required.";
@@ -130,7 +200,7 @@ export default function CreateEventPage() {
       nextErrors.endTime = "End time must be after start time.";
     }
 
-    if (mode === "publish" && startDate && startDate.getTime() <= Date.now()) {
+    if (startDate && startDate.getTime() <= Date.now()) {
       nextErrors.startTime = "Event start must be in the future.";
     }
 
@@ -138,17 +208,9 @@ export default function CreateEventPage() {
     return Object.keys(nextErrors).length === 0;
   }
 
-  async function submitForm(mode: PublishMode) {
+  async function submitForm() {
     setStatusMessage(null);
-    if (!validateForm(mode)) return;
-
-    if (mode === "draft") {
-      setIsSavingDraft(true);
-      await new Promise((resolve) => window.setTimeout(resolve, 300));
-      setStatusMessage({ type: "success", text: "Draft saved locally (UI only)." });
-      setIsSavingDraft(false);
-      return;
-    }
+    if (!validateForm()) return;
 
     if (!session) {
       setStatusMessage({ type: "error", text: "Sign in first to publish events." });
@@ -157,6 +219,11 @@ export default function CreateEventPage() {
 
     if (session.role !== "venue") {
       setStatusMessage({ type: "error", text: "Venue role is required to publish events." });
+      return;
+    }
+
+    if (!venueProfile) {
+      setStatusMessage({ type: "error", text: "Venue profile not found. Complete venue setup first." });
       return;
     }
 
@@ -177,6 +244,9 @@ export default function CreateEventPage() {
         end_time: endDate.toISOString(),
         zip_code: form.zipCode.slice(0, 5),
         ticket_url: form.ticketUrl.trim() || null,
+        price: form.priceType === "paid" ? Number(form.price) : 0,
+        age_requirement: form.ageRequirement,
+        capacity: form.capacity.trim() ? Number(form.capacity) : null,
       };
 
       const result = await createVenueEvent(payload, session);
@@ -191,7 +261,81 @@ export default function CreateEventPage() {
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void submitForm("publish");
+    void submitForm();
+  }
+
+  if (!session) {
+    return (
+      <section className="siteSection pageUtility">
+        <div className="siteContainer">
+          <div className="card emptyStateCard">
+            <h1>Create Event</h1>
+            <p className="meta">Sign in as a venue account to create and publish events.</p>
+            <div className="pageActions">
+              <Link href="/login" className="pageActionLink">
+                Login
+              </Link>
+              <Link href="/register" className="pageActionLink secondary">
+                Create Venue Account
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (session.role !== "venue") {
+    return (
+      <section className="siteSection pageUtility">
+        <div className="siteContainer">
+          <div className="card emptyStateCard">
+            <h1>Create Event</h1>
+            <p className="meta">Only venue accounts can create events.</p>
+            <div className="pageActions">
+              <Link href={getRoleDashboardHref(session)} className="pageActionLink">
+                Go to Your Dashboard
+              </Link>
+              <Link href="/search" className="pageActionLink secondary">
+                Browse Events
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (isCheckingAccess) {
+    return (
+      <section className="siteSection pageUtility">
+        <div className="siteContainer">
+          <div className="stateLoadingWrap">
+            <div className="stateSkeletonTitle" />
+            <div className="stateSkeletonLine" />
+            <div className="stateSkeletonCard tall" />
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (accessError) {
+    return (
+      <section className="siteSection pageUtility">
+        <div className="siteContainer">
+          <div className="card emptyStateCard">
+            <h1>Create Event</h1>
+            <p className="meta">{accessError}</p>
+            <div className="pageActions">
+              <Link href="/venues/dashboard" className="pageActionLink">
+                Back to Venue Dashboard
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
   }
 
   return (
@@ -199,14 +343,8 @@ export default function CreateEventPage() {
       <div className="siteContainer createEventLayout">
         <div className="card">
           <h1>Create Event</h1>
-          <p className="meta">Week 3 integration: publishes to backend `POST /api/v1/venues/events`.</p>
-          {!session ? (
-            <p className="fieldHint">
-              Sign in as a venue account before publishing. <Link href="/login">Go to login</Link>.
-            </p>
-          ) : (
-            <p className="fieldHint">Signed in as role: {session.role}</p>
-          )}
+          <p className="meta">Publishes to backend `POST /api/v1/venues/events` for your managed venue account.</p>
+          <p className="fieldHint">Venue profile: {venueProfile.name}</p>
 
           <form className="createEventForm" onSubmit={onSubmit} noValidate>
             <Input
@@ -306,6 +444,7 @@ export default function CreateEventPage() {
                 value={form.venueName}
                 onChange={(event) => updateField("venueName", event.target.value.slice(0, 120))}
                 aria-invalid={Boolean(errors.venueName)}
+                readOnly
                 required
               />
               <Input
@@ -402,10 +541,7 @@ export default function CreateEventPage() {
             ) : null}
 
             <div className="createEventActions">
-              <Button type="button" variant="secondary" onClick={() => void submitForm("draft")} disabled={isSavingDraft || isPublishing}>
-                {isSavingDraft ? "Saving..." : "Save Draft"}
-              </Button>
-              <Button type="submit" disabled={isPublishing || isSavingDraft}>
+              <Button type="submit" disabled={isPublishing}>
                 {isPublishing ? "Publishing..." : "Publish Event"}
               </Button>
             </div>

@@ -1,49 +1,97 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 
 from app.core.auth import require_user_id
-
 from app.db.supabase_admin import get_supabase_admin_client
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 ALLOWED_PUBLIC_ROLES = {"user", "venue", "artist"}
+_PROFILE_OPTIONAL_COLUMNS = ("email_opt_in", "sms_opt_in")
+
 
 class SignupRequest(BaseModel):
     email: EmailStr
     password: str
-    full_name: str | None = None
+    full_name: Optional[str] = None
     role: str = "user"
+    email_opt_in: bool = False
+    sms_opt_in: bool = False
+
+
+def _is_missing_profile_optional_column_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    missing_column_markers = (
+        "does not exist",
+        "could not find the",
+        "unknown column",
+    )
+    if not any(marker in message for marker in missing_column_markers):
+        return False
+    return any(column in message for column in _PROFILE_OPTIONAL_COLUMNS)
+
+
+def _upsert_signup_profile(admin, payload: SignupRequest, user_id: str):
+    full_profile = {
+        "id": user_id,
+        "role": payload.role,
+        "display_name": payload.full_name or "",
+        "home_zip": None,
+        "email_opt_in": payload.email_opt_in,
+        "sms_opt_in": payload.sms_opt_in,
+    }
+
+    try:
+        admin.table("profiles").upsert(full_profile, on_conflict="id").execute()
+        return
+    except Exception as exc:
+        if not _is_missing_profile_optional_column_error(exc):
+            raise
+
+    fallback_profile = {
+        "id": user_id,
+        "role": payload.role,
+        "display_name": payload.full_name or "",
+        "home_zip": None,
+    }
+    admin.table("profiles").upsert(fallback_profile, on_conflict="id").execute()
+
 
 @router.get("/me")
 def me(user_id: str = Depends(require_user_id)):
     admin = get_supabase_admin_client()
     if admin is None:
-        raise HTTPException(status_code=500, detail="Supabase admin client not configured")
-    
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Supabase admin client is unavailable. Verify SUPABASE_URL/SUPABASE_SECRET_KEY and Python dependencies.",
+        )
+
     response = (
-        admin
-        .table("profiles")
+        admin.table("profiles")
         .select("id, role, display_name, home_zip")
         .eq("id", user_id)
         .single()
         .execute()
     )
 
-    data = response.data or {}
+    data = response.data
 
-    return {
-        "id": data.get("id", user_id),
-        "role": data.get("role", "user"),
-        "display_name": data.get("display_name"),
-        "home_zip": data.get("home_zip")
-    }
+    if not data:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    return data
+
 
 @router.post("/signup")
 def signup(payload: SignupRequest):
-    admin_client = get_supabase_admin_client()
-    if admin_client is None:
-        raise HTTPException(status_code=500, detail="Supabase admin client not configured")
+    admin = get_supabase_admin_client()
+    if admin is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Supabase admin client is unavailable. Verify SUPABASE_URL/SUPABASE_SECRET_KEY and Python dependencies.",
+        )
 
     if len(payload.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
@@ -52,7 +100,7 @@ def signup(payload: SignupRequest):
         raise HTTPException(status_code=400, detail="Invalid role")
 
     try:
-        res = admin_client.auth.admin.create_user(
+        res = admin.auth.admin.create_user(
             {
                 "email": payload.email,
                 "password": payload.password,
@@ -70,7 +118,8 @@ def signup(payload: SignupRequest):
         )
 
     created = getattr(res, "user", None)
-    if not created or not getattr(created, "id", None):
+
+    if not created or not created.id:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Supabase auth user creation returned no user id",
@@ -79,24 +128,17 @@ def signup(payload: SignupRequest):
     user_id = created.id
 
     try:
-        insert_payload = {
-            "id": user_id,
-            "role": payload.role,
-            "display_name": payload.full_name or "",
-            "home_zip": None,
-        }
-
-        admin_client.table("profiles").upsert(insert_payload, on_conflict="id").execute()
+        _upsert_signup_profile(admin, payload, user_id)
 
     except Exception as e:
         try:
-            admin_client.auth.admin.delete_user(user_id)
+            admin.auth.admin.delete_user(user_id)
         except Exception:
             pass
 
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"User created in auth but failed to create profile row: {e}",
+            status_code=500,
+            detail=f"User created in auth but profile creation failed: {e}",
         )
 
     return {"status": "ok", "user_id": user_id, "email": payload.email}

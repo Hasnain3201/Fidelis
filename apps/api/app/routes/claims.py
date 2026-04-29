@@ -3,16 +3,11 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.auth import AuthContext, get_auth_context, require_role
+
 from app.db.supabase import get_supabase_client_for_user
 from app.db.supabase_admin import get_supabase_admin_client
-from app.models.schemas import (
-    ArtistClaimCreate,
-    ArtistClaimRead,
-    ClaimReview,
-    MyClaimsResponse,
-    VenueClaimCreate,
-    VenueClaimRead,
-)
+
+from app.models.claims_schemas import ArtistClaimCreate, ArtistClaimRead, ClaimReview, MyClaimsResponse, VenueClaimCreate, VenueClaimRead
 
 router = APIRouter()
 
