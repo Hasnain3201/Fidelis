@@ -99,7 +99,7 @@ export default async function VenueDetailPage({ params }: VenueDetailPageProps) 
                 </div>
                 <div className="eventMetaItem">
                   <strong>ZIP Code</strong>
-                  <span>{venue.zip_code}</span>
+                  <span>{venue.zip_code ?? "Location TBD"}</span>
                 </div>
                 <div className="eventMetaItem">
                   <strong>Status</strong>
@@ -113,7 +113,7 @@ export default async function VenueDetailPage({ params }: VenueDetailPageProps) 
 
               <div className="tagRow">
                 <span className="tagPill">Venue</span>
-                <span className="tagPill">{venue.zip_code}</span>
+                {venue.zip_code ? <span className="tagPill">{venue.zip_code}</span> : null}
               </div>
 
               <div className="eventDetailActions">

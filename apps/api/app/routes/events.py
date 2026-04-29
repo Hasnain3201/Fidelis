@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime, timezone
 from typing import Any, List, Literal, Optional, cast
 from uuid import UUID
@@ -39,10 +41,10 @@ def _is_invalid_uuid_lookup_error(exc: Exception) -> bool:
 
 
 _EVENT_DETAIL_BASE_SELECT = (
-    "id,title,description,start_time,end_time,category,zip_code,ticket_url,cover_image_url,venues(name)"
+    "id,title,description,start_time,end_time,category,zip_code,ticket_url,cover_image_url,venue_name,venues(name,zip_code)"
 )
 _EVENT_DETAIL_EXTENDED_SELECT = (
-    "id,title,description,start_time,end_time,category,zip_code,ticket_url,cover_image_url,price,age_requirement,capacity,venues(name)"
+    "id,title,description,start_time,end_time,category,zip_code,ticket_url,cover_image_url,price,age_requirement,capacity,venue_name,venues(name,zip_code)"
 )
 _EVENT_OPTIONAL_COLUMNS = ("price", "age_requirement", "capacity")
 
@@ -80,7 +82,41 @@ def _fetch_event_row_with_optional_fallback(client: Any, lookup_event_id: str):
         )
 
 
-_EVENT_SUMMARY_SELECT = "id,title,start_time,category,zip_code,is_promoted,cover_image_url,venues(name)"
+_EVENT_SUMMARY_SELECT = "id,title,start_time,category,zip_code,is_promoted,cover_image_url,venue_name,venues(name,zip_code,city,state)"
+
+
+def _embedded_venue(row: dict[str, Any]) -> dict[str, Any]:
+    venue = row.get("venues")
+    return venue if isinstance(venue, dict) else {}
+
+
+def _event_venue_name(row: dict[str, Any]) -> str:
+    return row.get("venue_name") or _embedded_venue(row).get("name") or "Unknown Venue"
+
+
+def _event_zip_code(row: dict[str, Any]) -> str | None:
+    raw = row.get("zip_code") or _embedded_venue(row).get("zip_code")
+    if raw is None:
+        return None
+    value = str(raw).strip()
+    return value or None
+
+
+def _event_category(row: dict[str, Any]) -> str:
+    return row.get("category") or "live-event"
+
+
+def _event_summary_from_row(row: dict[str, Any]) -> EventSummary:
+    return EventSummary(
+        id=str(row["id"]),
+        title=row.get("title") or "Untitled Event",
+        venue_name=_event_venue_name(row),
+        start_time=row["start_time"],
+        category=_event_category(row),
+        zip_code=_event_zip_code(row),
+        is_promoted=bool(row.get("is_promoted", False)),
+        cover_image_url=row.get("cover_image_url"),
+    )
 
 
 def _fetch_fallback_trending_rows(client: Any, limit_count: int = 20) -> list[dict[str, Any]]:
@@ -154,7 +190,7 @@ def build_event_query(
     is_promoted: Optional[bool] = None,
 ):
     select_clause = (
-        "id,title,start_time,category,zip_code,is_promoted,cover_image_url,venues(name, city, state)"
+        "id,title,start_time,category,zip_code,is_promoted,cover_image_url,venue_name,venues(name,zip_code,city,state)"
     )
 
     table = client.table("events")
@@ -208,7 +244,7 @@ def list_events(
 
     query = (
         client.table("events")
-        .select("id,title,start_time,category,zip_code,is_promoted,cover_image_url,venues(name)")
+        .select(_EVENT_SUMMARY_SELECT)
         .order("start_time")
         .limit(limit)
     )
@@ -226,19 +262,7 @@ def list_events(
 
     rows = response.data or []
 
-    return [
-        EventSummary(
-            id=row["id"],
-            title=row["title"],
-            venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
-            start_time=row["start_time"],
-            category=row["category"],
-            zip_code=row["zip_code"],
-            is_promoted=bool(row.get("is_promoted", False)),
-            cover_image_url=row.get("cover_image_url"),
-        )
-        for row in rows
-    ]
+    return [_event_summary_from_row(row) for row in rows]
 
 
 @router.get("/search", response_model=EventSearchResponse)
@@ -336,19 +360,7 @@ def search_events(
         rows = response.data or []
         total = response.count if isinstance(response.count, int) else len(rows)
 
-    items = [
-        EventSummary(
-            id=row["id"],
-            title=row["title"],
-            venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
-            start_time=row["start_time"],
-            category=row["category"],
-            zip_code=row["zip_code"],
-            is_promoted=bool(row.get("is_promoted", False)),
-            cover_image_url=row.get("cover_image_url"),
-        )
-        for row in rows
-    ]
+    items = [_event_summary_from_row(row) for row in rows]
 
     if sort_value != "recommended" and not type_tokens:
         items = [
@@ -414,7 +426,7 @@ async def get_recommended_events(user_id: UUID = Depends(require_user_id)):
     if artist_ids:
         artist_response = (
             client.table("event_artists")
-            .select("events(id,title,start_time,category,zip_code,is_promoted,cover_image_url,venues(name))")
+            .select("events(id,title,start_time,category,zip_code,is_promoted,cover_image_url,venue_name,venues(name,zip_code))")
             .in_("artist_id", artist_ids)
             .execute()
         ).data or []
@@ -435,19 +447,7 @@ async def get_recommended_events(user_id: UUID = Depends(require_user_id)):
 
     combined.sort(key=lambda x: x.get("start_time") or "")
 
-    items = [
-        EventSummary(
-            id=row["id"],
-            title=row["title"],
-            venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
-            start_time=row["start_time"],
-            category=row["category"],
-            zip_code=row["zip_code"],
-            is_promoted=bool(row.get("is_promoted", False)),
-            cover_image_url=row.get("cover_image_url"),
-        )
-        for row in combined
-    ]
+    items = [_event_summary_from_row(row) for row in combined]
 
     return items
 
@@ -495,23 +495,11 @@ async def get_trending_events():
             continue
 
         start_time = row.get("start_time")
-        zip_code = row.get("zip_code")
-        if not start_time or not zip_code:
+        if not start_time:
             continue
 
-        items.append(
-            EventSummary(
-                id=str(event_id),
-                title=row.get("title", "Untitled Event"),
-                venue_name=row.get("venue_name")
-                or (row.get("venues") or {}).get("name", "Unknown Venue"),
-                start_time=start_time,
-                category=row.get("category", "live-event"),
-                zip_code=zip_code,
-                is_promoted=bool(row.get("is_promoted", False)),
-                cover_image_url=row.get("cover_image_url"),
-            )
-        )
+        summary_row = {**row, "id": event_id}
+        items.append(_event_summary_from_row(summary_row))
 
     return items
 
@@ -592,11 +580,11 @@ def get_event(event_id: str):
         id=row["id"],
         title=row["title"],
         description=row.get("description", ""),
-        venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
+        venue_name=_event_venue_name(row),
         start_time=row["start_time"],
         end_time=row.get("end_time") or row["start_time"],
-        category=row["category"],
-        zip_code=row["zip_code"],
+        category=_event_category(row),
+        zip_code=_event_zip_code(row),
         ticket_url=row.get("ticket_url"),
         cover_image_url=row.get("cover_image_url"),
         price=row.get("price"),

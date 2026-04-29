@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -31,6 +33,8 @@ class Settings(BaseSettings):
     gemini_model_fallbacks: str = "gemini-2.5-flash-lite,gemini-2.5-flash"
     groq_api_key: str = ""
     groq_model: str = "llama-3.1-8b-instant"
+    scraper_worker_autostart: bool = True
+    scraper_worker_max_jobs: Optional[int] = None
 
     # External event APIs (admin preview; keys are server-side only)
     ticketmaster_api_key: str = Field(

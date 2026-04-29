@@ -200,6 +200,15 @@ class QueueService:
             }
         ).eq("id", job_id).execute()
 
+    def mark_retryable(self, job_id: str, error: str) -> None:
+        self._client.table("scrape_jobs").update(
+            {
+                "status": "pending",
+                "started_at": None,
+                "error": error[:4000],
+            }
+        ).eq("id", job_id).execute()
+
     def reset_stale_in_progress(self) -> int:
         """Reset any rows stuck in `in_progress` (e.g. after a crash) back to pending."""
         resp = (
