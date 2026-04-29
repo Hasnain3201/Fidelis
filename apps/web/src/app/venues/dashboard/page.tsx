@@ -45,8 +45,8 @@ function getRoleDashboardHref(session: AuthSession): string {
 
 function getLocationLabel(venue: VenueProfileResponse): string {
   const cityState = [venue.city, venue.state].filter(Boolean).join(", ");
-  if (cityState) return `${cityState} ${venue.zip_code}`;
-  return venue.zip_code;
+  if (cityState) return [cityState, venue.zip_code].filter(Boolean).join(" ");
+  return venue.zip_code ?? "Location TBD";
 }
 
 function makeVenueForm(profile: VenueProfileResponse | null): VenueFormState {

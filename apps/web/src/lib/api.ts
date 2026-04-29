@@ -7,7 +7,7 @@ export type EventSummary = {
   venue_name: string;
   start_time: string;
   category: string;
-  zip_code: string | null;
+  zip_code?: string | null;
   is_promoted: boolean;
   cover_image_url?: string | null;
 };
@@ -45,7 +45,7 @@ export type EventDetailResponse = {
   category: string;
   start_time: string;
   end_time: string;
-  zip_code: string;
+  zip_code?: string | null;
   ticket_url?: string | null;
   cover_image_url?: string | null;
   price?: number | null;
@@ -144,7 +144,7 @@ export type VenueSummary = {
   address_line?: string | null;
   city?: string | null;
   state?: string | null;
-  zip_code: string;
+  zip_code?: string | null;
   verified: boolean;
   cover_image_url?: string | null;
 };
@@ -229,7 +229,7 @@ export type VenueProfileResponse = {
   address_line?: string | null;
   city?: string | null;
   state?: string | null;
-  zip_code: string;
+  zip_code?: string | null;
   verified: boolean;
   cover_image_url?: string | null;
 };
@@ -254,8 +254,38 @@ export type CreateMyVenuePayload = {
   cover_image_url?: string | null;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const DEFAULT_API_BASE = "https://fidelisappsapi-production.up.railway.app";
+const CONFIGURED_API_BASE = process.env.NEXT_PUBLIC_API_URL?.trim() || DEFAULT_API_BASE;
 const REQUEST_TIMEOUT_MS = 10000;
+
+function normalizeApiBase(base: string): string {
+  return base.replace(/\/+$/, "");
+}
+
+function isLocalApiBase(base: string): boolean {
+  try {
+    const hostname = new URL(base).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0";
+  } catch {
+    return false;
+  }
+}
+
+const API_BASES = Array.from(
+  new Set([
+    normalizeApiBase(CONFIGURED_API_BASE),
+    ...(!isLocalApiBase(CONFIGURED_API_BASE) ? [DEFAULT_API_BASE] : []),
+  ]),
+);
+const API_BASE = API_BASES[0];
+
+function formatApiBaseList(): string {
+  return API_BASES.join(" or ");
+}
+
+function shouldTryNextApiBase(status: number, message: string): boolean {
+  return status === 404 && message.toLowerCase().includes("application not found");
+}
 
 async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
@@ -300,6 +330,43 @@ async function parseErrorMessage(response: Response): Promise<string> {
   }
 }
 
+async function fetchFromApiBases(
+  buildUrl: (base: string) => URL,
+  init?: RequestInit,
+): Promise<Response> {
+  let lastMessage = "Network request failed.";
+
+  for (let index = 0; index < API_BASES.length; index += 1) {
+    const base = API_BASES[index];
+    const url = buildUrl(base);
+
+    let response: Response;
+    try {
+      response = await fetchWithTimeout(url.toString(), {
+        ...init,
+        cache: init?.cache ?? "no-store",
+      });
+    } catch (error) {
+      lastMessage = error instanceof Error ? error.message : "Network request failed.";
+      if (index < API_BASES.length - 1) continue;
+      break;
+    }
+
+    if (!response.ok) {
+      const message = await parseErrorMessage(response);
+      lastMessage = message;
+      if (index < API_BASES.length - 1 && shouldTryNextApiBase(response.status, message)) {
+        continue;
+      }
+      throw new Error(message);
+    }
+
+    return response;
+  }
+
+  throw new Error(`${lastMessage} Confirm the API is running at ${formatApiBaseList()}.`);
+}
+
 function sortEventItems(items: EventSummary[], sort: EventSearchSort): EventSummary[] {
   if (sort === "recommended") return items;
 
@@ -321,27 +388,15 @@ type FetchApiInit = RequestInit & {
 async function fetchApi<T>(path: string, init?: FetchApiInit): Promise<T> {
   const { session, headers, ...requestInit } = init ?? {};
 
-  const url = new URL(path, API_BASE);
   const mergedHeaders: HeadersInit = {
     ...(headers ?? {}),
     ...(session ? getAuthHeaders(session) : {}),
   };
 
-  let response: Response;
-  try {
-    response = await fetchWithTimeout(url.toString(), {
-      ...requestInit,
-      headers: mergedHeaders,
-      cache: "no-store",
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Network request failed.";
-    throw new Error(`${message} Confirm the API is running at ${API_BASE}.`);
-  }
-
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response));
-  }
+  const response = await fetchFromApiBases((base) => new URL(path, base), {
+    ...requestInit,
+    headers: mergedHeaders,
+  });
 
   if (response.status === 204) {
     return undefined as T;
@@ -355,40 +410,36 @@ export async function searchEvents(zip: string): Promise<EventSearchResponse> {
 }
 
 export async function searchEventsWithFilters(params: EventSearchParams): Promise<EventSearchResponse> {
-  const url = new URL("/api/v1/events/search", API_BASE);
+  const buildSearchUrl = (base: string) => {
+    const url = new URL("/api/v1/events/search", base);
 
-  const zip = params.zip?.trim();
-  if (zip) {
-    url.searchParams.set("zip_code", zip);
-  }
+    const zip = params.zip?.trim();
+    if (zip) {
+      url.searchParams.set("zip_code", zip);
+    }
 
   if (typeof params.radiusMiles === "number" && params.radiusMiles > 0) {
     url.searchParams.set("radius_miles", String(params.radiusMiles));
   }
 
-  if (params.query?.trim()) url.searchParams.set("query", params.query.trim());
-  if (params.venue?.trim()) url.searchParams.set("venue", params.venue.trim());
-  if (params.city?.trim()) url.searchParams.set("city", params.city.trim());
-  if (params.state?.trim()) url.searchParams.set("state", params.state.trim());
+    if (params.query?.trim()) url.searchParams.set("query", params.query.trim());
+    if (params.venue?.trim()) url.searchParams.set("venue", params.venue.trim());
+    if (params.city?.trim()) url.searchParams.set("city", params.city.trim());
+    if (params.state?.trim()) url.searchParams.set("state", params.state.trim());
 
-  for (const category of params.categories ?? []) {
-    if (category.trim()) url.searchParams.append("categories", category.trim());
-  }
+    for (const category of params.categories ?? []) {
+      if (category.trim()) url.searchParams.append("categories", category.trim());
+    }
 
-  if (params.startAfter) url.searchParams.set("start_after", params.startAfter);
-  if (params.startBefore) url.searchParams.set("start_before", params.startBefore);
-  if (params.page && params.page > 1) url.searchParams.set("page", String(params.page));
-  if (params.limit) url.searchParams.set("limit", String(params.limit));
+    if (params.startAfter) url.searchParams.set("start_after", params.startAfter);
+    if (params.startBefore) url.searchParams.set("start_before", params.startBefore);
+    if (params.page && params.page > 1) url.searchParams.set("page", String(params.page));
+    if (params.limit) url.searchParams.set("limit", String(params.limit));
 
-  let response: Response;
-  try {
-    response = await fetchWithTimeout(url.toString(), { cache: "no-store" });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Network request failed.";
-    throw new Error(`${message} Confirm the API is running at ${API_BASE}.`);
-  }
+    return url;
+  };
 
-  if (!response.ok) throw new Error(await parseErrorMessage(response));
+  const response = await fetchFromApiBases(buildSearchUrl);
 
   const payload = (await response.json()) as EventSearchResponse;
   if (params.sort) payload.items = sortEventItems(payload.items, params.sort);

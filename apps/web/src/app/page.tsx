@@ -78,7 +78,7 @@ function mapEventToCard(item: EventSummary): EventCardItem {
     dateLabel: formatDateLabel(item.start_time),
     timeLabel: formatTimeLabel(item.start_time),
     zipCode: item.zip_code ?? "",
-    location: item.zip_code ?? "",
+    location: item.zip_code ?? "Location TBD",
     venue: item.venue_name,
     price: "TBD",
     image: getCoverImage(item.cover_image_url, "event"),
@@ -89,7 +89,8 @@ function mapEventToCard(item: EventSummary): EventCardItem {
 
 function mapVenueToCard(venue: VenueSummary): VenueCardItem {
   const cityState = [venue.city, venue.state].filter(Boolean).join(", ");
-  const location = cityState || venue.zip_code;
+  const zipCode = venue.zip_code ?? "";
+  const location = cityState || zipCode || "Location TBD";
   return {
     id: venue.id,
     name: venue.name,
@@ -97,7 +98,7 @@ function mapVenueToCard(venue: VenueSummary): VenueCardItem {
     description: venue.description?.trim() || "Venue profile details are available on event pages.",
     location,
     image: getCoverImage(venue.cover_image_url, "venue"),
-    tags: [venue.zip_code],
+    tags: zipCode ? [zipCode] : [],
     badge: "Venue",
   };
 }

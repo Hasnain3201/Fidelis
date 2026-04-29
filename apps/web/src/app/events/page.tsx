@@ -72,7 +72,7 @@ function mapSummaryToCardItem(item: EventSummary, index: number): EventCardItem 
     dateLabel: formatDateLabel(item.start_time),
     timeLabel: formatTimeLabel(item.start_time),
     zipCode: item.zip_code ?? "",
-    location: item.zip_code ?? "",
+    location: item.zip_code ?? "Location TBD",
     venue: item.venue_name,
     price: "TBD",
     image: getCoverImage(item.cover_image_url, "event"),

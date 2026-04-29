@@ -1,5 +1,7 @@
 """Normalization and fingerprint helpers for scraped data."""
 
+from __future__ import annotations
+
 import hashlib
 import re
 from datetime import datetime
@@ -145,6 +147,7 @@ def map_event_to_supabase(
     venue_id: str | None,
     venue_name: str | None,
     source_url: str | None = None,
+    venue_zip_code: str | None = None,
 ) -> dict:
     """Map AI-extracted event data to Supabase ``events`` columns."""
     title = event_data.get("title") or event_data.get("name") or "Untitled"
@@ -194,7 +197,7 @@ def map_event_to_supabase(
         "venue_id": venue_id,
         "venue_name": ev_venue_name or None,
         "category": category,
-        "zip_code": _normalize_zip(event_data.get("zip_code")),
+        "zip_code": _normalize_zip(event_data.get("zip_code")) or _normalize_zip(venue_zip_code),
         "ticket_url": event_data.get("ticket_url") or None,
         "target_audience": event_data.get("target_audience") or "All Ages",
         "types": types,

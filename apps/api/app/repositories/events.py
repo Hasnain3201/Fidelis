@@ -50,6 +50,7 @@ class EventRepository:
         venue_id: str | None,
         venue_name: str | None = None,
         source_url: str | None = None,
+        venue_zip_code: str | None = None,
     ) -> dict[str, Any]:
         """Normalize, deduplicate, and upsert a batch of scraped events.
 
@@ -65,7 +66,7 @@ class EventRepository:
             if not isinstance(ev, dict):
                 continue
 
-            row = map_event_to_supabase(ev, venue_id, venue_name, source_url)
+            row = map_event_to_supabase(ev, venue_id, venue_name, source_url, venue_zip_code)
             fp = row.get("fingerprint")
             if not fp:
                 continue

@@ -1,5 +1,7 @@
 """HTML fetching, parsing, and text extraction."""
 
+from __future__ import annotations
+
 import re
 import time
 

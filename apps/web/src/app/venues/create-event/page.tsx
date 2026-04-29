@@ -112,7 +112,7 @@ export default function CreateEventPage() {
         setForm((current) => ({
           ...current,
           venueName: profile.name,
-          zipCode: current.zipCode || profile.zip_code,
+          zipCode: current.zipCode || profile.zip_code || "",
         }));
       } catch (error) {
         if (cancelled) return;
@@ -344,7 +344,7 @@ export default function CreateEventPage() {
         <div className="card">
           <h1>Create Event</h1>
           <p className="meta">Publishes to backend `POST /api/v1/venues/events` for your managed venue account.</p>
-          <p className="fieldHint">Venue profile: {venueProfile.name}</p>
+          <p className="fieldHint">Venue profile: {venueProfile?.name ?? "Managed venue"}</p>
 
           <form className="createEventForm" onSubmit={onSubmit} noValidate>
             <Input

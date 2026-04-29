@@ -114,7 +114,7 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
                 </div>
                 <div className="eventMetaItem">
                   <strong>ZIP Code</strong>
-                  <span>{event.zip_code}</span>
+                  <span>{event.zip_code ?? "Location TBD"}</span>
                 </div>
                 <div className="eventMetaItem">
                   <strong>Category</strong>

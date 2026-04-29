@@ -17,6 +17,13 @@ logger = logging.getLogger(__name__)
 
 
 _IDLE_SLEEP_SECONDS = 2.0
+_TRANSIENT_AI_BACKOFF_SECONDS = 60.0
+_TRANSIENT_AI_ERROR_MARKERS = ("429", "quota", "rate limit", "rate_limit")
+
+
+def _is_transient_ai_error(exc: BaseException) -> bool:
+    message = str(exc).lower()
+    return any(marker in message for marker in _TRANSIENT_AI_ERROR_MARKERS)
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +87,7 @@ def _run_job(job: dict) -> dict:
     # ------------------------------------------------------------------
     venue_id: str | None = venue_id_hint
     venue_name: str | None = None
+    venue_zip_code: str | None = None
     venue_action: str | None = None
     venue_repo = VenueRepository()
 
@@ -93,15 +101,21 @@ def _run_job(job: dict) -> dict:
         venue_id = v_result["venue_id"]
         venue_action = v_result["action"]
         venue_name = venue_data.get("venue_name") or venue_data.get("name")
+        saved_venue = venue_repo.get_venue(venue_id)
+        if saved_venue:
+            venue_name = saved_venue.get("name") or venue_name
+            venue_zip_code = saved_venue.get("zip_code")
     elif venue_id:
         v = venue_repo.get_venue(venue_id)
-        venue_name = v["name"] if v else None
+        if v:
+            venue_name = v.get("name")
+            venue_zip_code = v.get("zip_code")
 
     # ------------------------------------------------------------------
     # 2) Events: bulk dedup + smart merge
     # ------------------------------------------------------------------
     event_repo = EventRepository()
-    event_summary = event_repo.save_events(events, venue_id, venue_name, url)
+    event_summary = event_repo.save_events(events, venue_id, venue_name, url, venue_zip_code)
 
     # ------------------------------------------------------------------
     # 3) Artists: upsert each, building stage_name -> artist_id map
@@ -284,14 +298,27 @@ class ScrapeWorker:
                     content_preview=content_preview,
                 )
                 logger.info("Scrape job %s completed", job_id)
+                job_processed = True
             except Exception as exc:
+                if _is_transient_ai_error(exc):
+                    logger.warning(
+                        "Scrape job %s hit AI quota/rate limit; returning to pending and backing off",
+                        job_id,
+                    )
+                    try:
+                        await asyncio.to_thread(queue.mark_retryable, job_id, str(exc))
+                    except Exception:
+                        logger.exception("Failed to return retryable job %s to pending", job_id)
+                    await self._sleep_or_stop(_TRANSIENT_AI_BACKOFF_SECONDS)
+                    continue
+
                 logger.exception("Scrape job %s failed", job_id)
                 try:
                     await asyncio.to_thread(queue.mark_failed, job_id, str(exc))
                 except Exception:
                     logger.exception("Also failed to record failure for job %s", job_id)
-            finally:
                 job_processed = True
+            finally:
                 self._current_url = None
 
             if job_processed:
