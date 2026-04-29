@@ -128,7 +128,7 @@ export default async function ArtistDetailPage({ params }: ArtistDetailPageProps
           <aside className="eventDetailSidebar">
             <div className="eventSidebarCard">
               <h2>About This Artist</h2>
-              <p className="meta">Loaded from live backend data through FastAPI `/api/v1/artists/{id}`.</p>
+              <p className="meta">{artist.bio || "No bio available yet."}</p>
             </div>
 
             <div className="eventSidebarCard">

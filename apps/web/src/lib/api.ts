@@ -23,6 +23,7 @@ export type EventSearchSort = "recommended" | "dateSoonest" | "dateLatest";
 
 export type EventSearchParams = {
   zip?: string;
+  radiusMiles?: number;
   categories?: string[];
   query?: string;
   venue?: string;
@@ -416,6 +417,10 @@ export async function searchEventsWithFilters(params: EventSearchParams): Promis
     if (zip) {
       url.searchParams.set("zip_code", zip);
     }
+
+  if (typeof params.radiusMiles === "number" && params.radiusMiles > 0) {
+    url.searchParams.set("radius_miles", String(params.radiusMiles));
+  }
 
     if (params.query?.trim()) url.searchParams.set("query", params.query.trim());
     if (params.venue?.trim()) url.searchParams.set("venue", params.venue.trim());

@@ -9,7 +9,7 @@ import { isValidZipCode, normalizeZipInput, toZip5 } from "@/lib/zip";
 
 import { getCoverImage } from "@/lib/cover-images";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://fidelisappsapi-production.up.railway.app";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 
 

@@ -500,7 +500,8 @@ export default function QueueDashboard() {
         ),
       );
       const fetched = payloads.flatMap((p) => p.jobs ?? []);
-      setJobs(fetched);
+      const unique = Array.from(new Map(fetched.map((j) => [j.id, j])).values());
+      setJobs(unique);
       ingestForRing(fetched);
 
       if (countsRes.ok) {
