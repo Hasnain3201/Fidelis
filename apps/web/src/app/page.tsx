@@ -77,8 +77,8 @@ function mapEventToCard(item: EventSummary): EventCardItem {
     description: `Hosted by ${item.venue_name}. Open event details to view full schedule and ticket info.`,
     dateLabel: formatDateLabel(item.start_time),
     timeLabel: formatTimeLabel(item.start_time),
-    zipCode: item.zip_code,
-    location: item.zip_code,
+    zipCode: item.zip_code ?? "",
+    location: item.zip_code ?? "Location TBD",
     venue: item.venue_name,
     price: "TBD",
     image: getCoverImage(item.cover_image_url, "event"),
@@ -89,16 +89,17 @@ function mapEventToCard(item: EventSummary): EventCardItem {
 
 function mapVenueToCard(venue: VenueSummary): VenueCardItem {
   const cityState = [venue.city, venue.state].filter(Boolean).join(", ");
-  const location = cityState || venue.zip_code;
+  const zipCode = venue.zip_code ?? "";
+  const location = cityState || zipCode || "Location TBD";
   return {
     id: venue.id,
     name: venue.name,
-    tagline: venue.verified ? "Verified venue" : "Community venue",
+    tagline: "Venue profile",
     description: venue.description?.trim() || "Venue profile details are available on event pages.",
     location,
     image: getCoverImage(venue.cover_image_url, "venue"),
-    tags: [venue.zip_code],
-    badge: venue.verified ? "Verified" : "Venue",
+    tags: zipCode ? [zipCode] : [],
+    badge: "Venue",
   };
 }
 

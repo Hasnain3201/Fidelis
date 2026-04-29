@@ -9,6 +9,7 @@ from app.db.supabase_admin import get_supabase_admin_client
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 ALLOWED_PUBLIC_ROLES = {"user", "venue", "artist"}
+_PROFILE_OPTIONAL_COLUMNS = ("email_opt_in", "sms_opt_in")
 
 
 class SignupRequest(BaseModel):
@@ -18,6 +19,44 @@ class SignupRequest(BaseModel):
     role: str = "user"
     email_opt_in: bool = False
     sms_opt_in: bool = False
+
+
+def _is_missing_profile_optional_column_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    missing_column_markers = (
+        "does not exist",
+        "could not find the",
+        "unknown column",
+    )
+    if not any(marker in message for marker in missing_column_markers):
+        return False
+    return any(column in message for column in _PROFILE_OPTIONAL_COLUMNS)
+
+
+def _upsert_signup_profile(admin, payload: SignupRequest, user_id: str):
+    full_profile = {
+        "id": user_id,
+        "role": payload.role,
+        "display_name": payload.full_name or "",
+        "home_zip": None,
+        "email_opt_in": payload.email_opt_in,
+        "sms_opt_in": payload.sms_opt_in,
+    }
+
+    try:
+        admin.table("profiles").upsert(full_profile, on_conflict="id").execute()
+        return
+    except Exception as exc:
+        if not _is_missing_profile_optional_column_error(exc):
+            raise
+
+    fallback_profile = {
+        "id": user_id,
+        "role": payload.role,
+        "display_name": payload.full_name or "",
+        "home_zip": None,
+    }
+    admin.table("profiles").upsert(fallback_profile, on_conflict="id").execute()
 
 
 @router.get("/me")
@@ -89,17 +128,7 @@ def signup(payload: SignupRequest):
     user_id = created.id
 
     try:
-        admin.table("profiles").upsert(
-            {
-                "id": user_id,
-                "role": payload.role,
-                "display_name": payload.full_name or "",
-                "home_zip": None,
-                "email_opt_in": payload.email_opt_in,
-                "sms_opt_in": payload.sms_opt_in,
-            },
-            on_conflict="id",
-        ).execute()
+        _upsert_signup_profile(admin, payload, user_id)
 
     except Exception as e:
         try:

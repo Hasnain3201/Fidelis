@@ -9,7 +9,7 @@ import type { VenueSummary } from "@/lib/api";
 
 import { getCoverImage } from "@/lib/cover-images";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://fidelisappsapi-production.up.railway.app";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const RECOMMENDED_PAGE_SIZE = 5;
 const SEARCH_PAGE_SIZE = 6;
@@ -26,17 +26,18 @@ type VenueSearchResponse = {
 
 function mapVenueToCard(venue: VenueSummary): VenueCardItem {
   const cityState = [venue.city, venue.state].filter(Boolean).join(", ");
-  const location = cityState || venue.zip_code;
+  const zipCode = venue.zip_code ?? "";
+  const location = cityState || zipCode || "Location TBD";
 
   return {
     id: venue.id,
     name: venue.name,
-    tagline: venue.verified ? "Verified venue" : "Community venue",
+    tagline: "Venue profile",
     description: venue.description?.trim() || "Venue profile details are available on event pages.",
     location,
     image: getCoverImage(venue.cover_image_url, "venue"),
-    tags: [venue.zip_code],
-    badge: venue.verified ? "Verified" : "Venue",
+    tags: zipCode ? [zipCode] : [],
+    badge: "Venue",
   };
 }
 
@@ -90,7 +91,6 @@ async function searchVenues(params: {
   city?: string;
   state?: string;
   zip_code?: string;
-  verified?: boolean;
   page: number;
   limit: number;
 }): Promise<VenueSearchResponse> {
@@ -100,7 +100,6 @@ async function searchVenues(params: {
   if (params.city?.trim()) url.searchParams.set("city", params.city.trim());
   if (params.state?.trim()) url.searchParams.set("state", params.state.trim().toUpperCase());
   if (params.zip_code?.trim()) url.searchParams.set("zip_code", params.zip_code.trim());
-  if (typeof params.verified === "boolean") url.searchParams.set("verified", String(params.verified));
   if (params.page > 1) url.searchParams.set("page", String(params.page));
   url.searchParams.set("limit", String(params.limit));
 
@@ -126,7 +125,6 @@ export default function VenuesPage() {
   const [zipCode, setZipCode] = useState("");
   const [city, setCity] = useState("");
   const [stateCode, setStateCode] = useState("");
-  const [verifiedOnly, setVerifiedOnly] = useState(false);
 
   // Search results
   const [hasSearched, setHasSearched] = useState(false);
@@ -199,7 +197,6 @@ export default function VenuesPage() {
     setZipCode("");
     setCity("");
     setStateCode("");
-    setVerifiedOnly(false);
 
     setZipError("");
     setStatusMessage("");
@@ -231,8 +228,7 @@ export default function VenuesPage() {
       venueText.trim() ||
       zipCode.trim() ||
       city.trim() ||
-      stateCode.trim() ||
-      verifiedOnly;
+      stateCode.trim();
 
     if (!hasAnyInput) {
       setHasSearched(false);
@@ -254,7 +250,6 @@ export default function VenuesPage() {
         city: city.trim() || undefined,
         state: stateCode.trim() ? stateCode.trim().toUpperCase() : undefined,
         zip_code: zipCode.trim() ? toZip5(zipCode) : undefined,
-        verified: verifiedOnly ? true : undefined,
         page: nextPage,
         limit: SEARCH_PAGE_SIZE,
       });
@@ -419,19 +414,6 @@ export default function VenuesPage() {
                     </p>
                   ) : null}
 
-                  <div className="filterField">
-                    <span>Status</span>
-                    <label className="checkItem" style={{ margin: 0 }}>
-                      <input
-                        type="checkbox"
-                        checked={verifiedOnly}
-                        onChange={() => setVerifiedOnly((value) => !value)}
-                        disabled={isSearching}
-                      />
-                      Verified venues only
-                    </label>
-                  </div>
-
                   <div className="pageActions" style={{ marginTop: 12, marginBottom: 0 }}>
                     <button type="submit" className="pageActionLink" disabled={isSearching}>
                       {isSearching ? "Searching..." : "Search"}
@@ -456,7 +438,7 @@ export default function VenuesPage() {
                       <div className="emptyStateCard" style={{ marginTop: 12 }}>
                         <h3 style={{ margin: 0 }}>No venues matched your search</h3>
                         <p className="meta" style={{ margin: 0 }}>
-                          Try broadening location or turning off verified-only.
+                          Try broadening your location or search keywords.
                         </p>
                       </div>
                     ) : null}

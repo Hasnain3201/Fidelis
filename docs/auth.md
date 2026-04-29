@@ -32,22 +32,18 @@ The role is stored in `profiles.role` (Postgres enum: `user_role`). `guest` is n
 
 ## Claims-Based Ownership
 
-Venues and artists can exist in the database before any account owner is known. When a user wants to manage a venue or artist, they submit a **claim** which must be approved by an admin before management access is granted.
+Venues and artists can exist in the database before any account owner is known. Management access is determined by a **managed profile link**:
 
-### Claim Lifecycle
-
-```
-pending  ──(admin approves)──>  approved  ──>  user can manage entity
-         ──(admin rejects)───>  rejected  ──>  user cannot manage entity
-```
+1. Legacy owner link (`owner_id`) when present
+2. Claim link (`venue_claims` / `artist_claims`) for compatibility workflows
 
 ### Authorization Model
 
 Write access to venues and artists requires **both**:
 1. The correct role (`venue` or `artist`)
-2. An **approved claim** linking the user to the specific entity
+2. A managed profile link to the specific venue/artist
 
-Creating a new venue/artist via the API auto-approves the claim for the creator.
+Creating a new venue/artist via the API is immediately manageable by the creator account. Claim rows may still be created for compatibility with existing tooling.
 
 ### Claim Tables
 
@@ -73,13 +69,13 @@ Each claim row includes `reviewed_by` and `reviewed_at` for audit.
 | `/api/v1/users/follows`                      | GET    | Required | user    | —              |
 | `/api/v1/users/follows`                      | POST   | Required | user    | —              |
 | `/api/v1/users/follows/{aid}`                | DELETE | Required | user    | —              |
-| `/api/v1/venues/mine`                        | GET    | Required | venue   | Approved       |
-| `/api/v1/venues/mine`                        | POST   | Required | venue   | Auto-approved  |
-| `/api/v1/venues/mine`                        | PATCH  | Required | venue   | Approved       |
-| `/api/v1/venues/events`                      | POST   | Required | venue   | Approved       |
-| `/api/v1/artists/mine`                       | GET    | Required | artist  | Approved       |
-| `/api/v1/artists/mine`                       | POST   | Required | artist  | Auto-approved  |
-| `/api/v1/artists/mine`                       | PATCH  | Required | artist  | Approved       |
+| `/api/v1/venues/mine`                        | GET    | Required | venue   | Managed link   |
+| `/api/v1/venues/mine`                        | POST   | Required | venue   | —              |
+| `/api/v1/venues/mine`                        | PATCH  | Required | venue   | Managed link   |
+| `/api/v1/venues/events`                      | POST   | Required | venue   | Managed link   |
+| `/api/v1/artists/mine`                       | GET    | Required | artist  | Managed link   |
+| `/api/v1/artists/mine`                       | POST   | Required | artist  | —              |
+| `/api/v1/artists/mine`                       | PATCH  | Required | artist  | Managed link   |
 | `/api/v1/claims/venue-claims`                | POST   | Required | venue   | —              |
 | `/api/v1/claims/artist-claims`               | POST   | Required | artist  | —              |
 | `/api/v1/claims/mine`                        | GET    | Required | any     | —              |
@@ -91,7 +87,7 @@ Each claim row includes `reviewed_by` and `reviewed_at` for audit.
 | Status | Meaning                                             |
 |--------|-----------------------------------------------------|
 | 401    | Missing or invalid/expired JWT                      |
-| 403    | Valid JWT but insufficient role **or** no approved claim |
+| 403    | Valid JWT but insufficient role **or** no managed profile link |
 | 404    | Resource not found or not managed by caller          |
 | 409    | Claim already exists for this user/entity pair       |
 
@@ -100,8 +96,8 @@ Each claim row includes `reviewed_by` and `reviewed_at` for audit.
 All user-facing tables have RLS enabled. The API forwards the caller's JWT to Supabase so `auth.uid()` resolves to the caller in every query.
 
 - **Reads**: profiles, venues, artists, events, and event_artists are publicly readable. Favorites, artist_follows, and claims are self-only.
-- **Venue/artist writes**: require an approved claim (RLS checks `venue_claims`/`artist_claims` for `auth.uid()` with status `approved`).
-- **Event writes**: scoped to `created_by = auth.uid()`.
+- **Venue/artist writes via API**: require role + managed profile link; no verification gate is required.
+- **Event writes**: scoped to managed venue accounts via `/api/v1/venues/events`.
 - **Claim inserts**: users can only insert pending claims for themselves.
 - **Claim reviews**: admin-only via service role (bypasses RLS).
 - **Admin client**: used for signup provisioning, venue/artist creation with auto-claim, and claim review. Bypasses RLS intentionally.

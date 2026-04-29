@@ -1,6 +1,9 @@
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from typing import Optional
 from unittest.mock import MagicMock, patch
+
+from app.services.scraper.utils import map_event_to_supabase
 
 
 def _event(
@@ -10,12 +13,14 @@ def _event(
     venue: str,
     category: str,
     start: datetime,
-    zip_code: str = "10001",
+    zip_code: Optional[str] = "10001",
+    venue_zip_code: Optional[str] = None,
 ):
     return {
         "id": event_id,
         "title": title,
         "venue_name": venue,
+        "venues": {"name": venue, "zip_code": venue_zip_code},
         "start_time": start.isoformat(),
         "category": category,
         "zip_code": zip_code,
@@ -115,6 +120,50 @@ def test_search_sort_date_latest(mock_get_client, mock_build_event_query, anon_c
     assert resp.status_code == 200
     body = resp.json()
     assert [item["id"] for item in body["items"]] == ["evt_newer", "evt_older"]
+
+
+@patch("app.routes.events.build_event_query")
+@patch("app.routes.events.get_supabase_client")
+def test_search_falls_back_to_venue_zip_when_event_zip_missing(mock_get_client, mock_build_event_query, anon_client):
+    now = datetime.now(timezone.utc)
+    response_rows = [
+        _event(
+            "evt_missing_zip",
+            title="Venue ZIP Show",
+            venue="Blue Room",
+            category="live-music",
+            start=now + timedelta(days=1),
+            zip_code=None,
+            venue_zip_code="10003",
+        )
+    ]
+
+    query = MagicMock()
+    query.range.return_value = query
+    query.execute.return_value = SimpleNamespace(data=response_rows, count=1)
+    mock_get_client.return_value = MagicMock()
+    mock_build_event_query.return_value = query
+
+    resp = anon_client.get("/api/v1/events/search")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["items"][0]["zip_code"] == "10003"
+
+
+def test_scraped_event_inherits_venue_zip_when_event_zip_missing():
+    mapped = map_event_to_supabase(
+        {
+            "title": "Venue ZIP Show",
+            "start_datetime": "2026-05-01T20:00:00-04:00",
+            "types": ["Music"],
+        },
+        venue_id="venue-id",
+        venue_name="Blue Room",
+        venue_zip_code="10003",
+    )
+
+    assert mapped["zip_code"] == "10003"
 
 
 def test_search_invalid_sort_returns_422(anon_client):

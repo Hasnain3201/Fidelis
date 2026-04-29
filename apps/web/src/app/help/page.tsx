@@ -29,7 +29,7 @@ const FAQS = [
   {
     question: "I'm a venue owner. How do I list my events?",
     answer:
-      "Create a venue account by clicking Sign Up and selecting Venue. Once your account is verified, you can publish events through your Venue Dashboard.",
+      "Create a venue account by clicking Sign Up and selecting Venue. Complete your venue profile once, then publish events through your Venue Dashboard any time.",
   },
   {
     question: "I'm an artist. How do I get on LIVEY?",

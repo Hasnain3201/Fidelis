@@ -112,7 +112,7 @@ export default function CreateEventPage() {
         setForm((current) => ({
           ...current,
           venueName: profile.name,
-          zipCode: current.zipCode || profile.zip_code,
+          zipCode: current.zipCode || profile.zip_code || "",
         }));
       } catch (error) {
         if (cancelled) return;
@@ -227,11 +227,6 @@ export default function CreateEventPage() {
       return;
     }
 
-    if (!venueProfile.verified) {
-      setStatusMessage({ type: "error", text: "Only verified venue accounts can publish events." });
-      return;
-    }
-
     const startDate = buildDateTime(form.date, form.startTime);
     const endDate = buildDateTime(form.date, form.endTime);
     if (!startDate || !endDate) {
@@ -343,31 +338,13 @@ export default function CreateEventPage() {
     );
   }
 
-  if (!venueProfile?.verified) {
-    return (
-      <section className="siteSection pageUtility">
-        <div className="siteContainer">
-          <div className="card emptyStateCard">
-            <h1>Create Event</h1>
-            <p className="meta">Only verified venue accounts can publish events.</p>
-            <div className="pageActions">
-              <Link href="/venues/dashboard" className="pageActionLink">
-                Back to Venue Dashboard
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
   return (
     <section className="siteSection pageUtility">
       <div className="siteContainer createEventLayout">
         <div className="card">
           <h1>Create Event</h1>
-          <p className="meta">Publishes to backend `POST /api/v1/venues/events` for verified venue accounts.</p>
-          <p className="fieldHint">Venue profile: {venueProfile.name}</p>
+          <p className="meta">Publishes to backend `POST /api/v1/venues/events` for your managed venue account.</p>
+          <p className="fieldHint">Venue profile: {venueProfile?.name ?? "Managed venue"}</p>
 
           <form className="createEventForm" onSubmit={onSubmit} noValidate>
             <Input

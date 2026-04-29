@@ -9,7 +9,7 @@ import { isValidZipCode, normalizeZipInput, toZip5 } from "@/lib/zip";
 
 import { getCoverImage } from "@/lib/cover-images";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://fidelisappsapi-production.up.railway.app";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 
 
@@ -71,8 +71,8 @@ function mapSummaryToCardItem(item: EventSummary, index: number): EventCardItem 
     description: `Hosted by ${item.venue_name}. Open event details to view full schedule and ticket info.`,
     dateLabel: formatDateLabel(item.start_time),
     timeLabel: formatTimeLabel(item.start_time),
-    zipCode: item.zip_code,
-    location: item.zip_code,
+    zipCode: item.zip_code ?? "",
+    location: item.zip_code ?? "Location TBD",
     venue: item.venue_name,
     price: "TBD",
     image: getCoverImage(item.cover_image_url, "event"),

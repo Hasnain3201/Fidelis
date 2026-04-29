@@ -19,6 +19,10 @@ function getDashboardHref(session: AuthSession): string {
   return "/dashboard";
 }
 
+const ADMIN_NAV_ITEMS = [
+  { href: "/admin/scraper", label: "Scraper" },
+];
+
 export function SiteHeader() {
   const pathname = usePathname();
   const router = useRouter();
@@ -99,6 +103,16 @@ export function SiteHeader() {
           <div className="authRow">
             {session ? (
               <>
+                {session.role === "admin" &&
+                  ADMIN_NAV_ITEMS.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={pathname === item.href ? "navLink active" : "navLink"}
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
                 <Link href="/profile" className="authBadge" style={{ cursor: "pointer" }}>
                   {session.role}
                 </Link>

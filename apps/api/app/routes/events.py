@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime, timezone
 from typing import Any, List, Literal, Optional, cast
 from uuid import UUID
@@ -7,6 +9,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.core.auth import require_user_id
 from app.db.supabase import get_supabase_client
 from app.models.event_schemas import EventDetail, EventSearchResponse, EventSummary, TrendingContentItem
+from app.services.zip_index import find_nearby_zips
+
+DEFAULT_RADIUS_MILES = 10
+MAX_RADIUS_MILES = 100
 
 router = APIRouter()
 
@@ -25,6 +31,128 @@ def _parse_uuid(value: str) -> Optional[UUID]:
         return UUID(value)
     except ValueError:
         return None
+
+
+def _coerce_event_lookup_id(event_id: str) -> str:
+    parsed = _parse_uuid(event_id)
+    if parsed is not None:
+        return str(parsed)
+    return event_id
+
+
+def _is_invalid_uuid_lookup_error(exc: Exception) -> bool:
+    return "invalid input syntax for type uuid" in str(exc).lower()
+
+
+_EVENT_DETAIL_BASE_SELECT = (
+    "id,title,description,start_time,end_time,category,zip_code,ticket_url,cover_image_url,venue_name,venues(name,zip_code)"
+)
+_EVENT_DETAIL_EXTENDED_SELECT = (
+    "id,title,description,start_time,end_time,category,zip_code,ticket_url,cover_image_url,price,age_requirement,capacity,venue_name,venues(name,zip_code)"
+)
+_EVENT_OPTIONAL_COLUMNS = ("price", "age_requirement", "capacity")
+
+
+def _is_missing_optional_event_column_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    missing_column_markers = (
+        "does not exist",
+        "could not find the",
+        "unknown column",
+    )
+    if not any(marker in message for marker in missing_column_markers):
+        return False
+    return any(column in message for column in _EVENT_OPTIONAL_COLUMNS)
+
+
+def _fetch_event_row_with_optional_fallback(client: Any, lookup_event_id: str):
+    try:
+        return (
+            client.table("events")
+            .select(_EVENT_DETAIL_EXTENDED_SELECT)
+            .eq("id", lookup_event_id)
+            .single()
+            .execute()
+        )
+    except Exception as exc:
+        if not _is_missing_optional_event_column_error(exc):
+            raise
+        return (
+            client.table("events")
+            .select(_EVENT_DETAIL_BASE_SELECT)
+            .eq("id", lookup_event_id)
+            .single()
+            .execute()
+        )
+
+
+_EVENT_SUMMARY_SELECT = "id,title,start_time,category,zip_code,is_promoted,cover_image_url,venue_name,venues(name,zip_code,city,state)"
+
+
+def _embedded_venue(row: dict[str, Any]) -> dict[str, Any]:
+    venue = row.get("venues")
+    return venue if isinstance(venue, dict) else {}
+
+
+def _event_venue_name(row: dict[str, Any]) -> str:
+    return row.get("venue_name") or _embedded_venue(row).get("name") or "Unknown Venue"
+
+
+def _event_zip_code(row: dict[str, Any]) -> str | None:
+    raw = row.get("zip_code") or _embedded_venue(row).get("zip_code")
+    if raw is None:
+        return None
+    value = str(raw).strip()
+    return value or None
+
+
+def _event_category(row: dict[str, Any]) -> str:
+    return row.get("category") or "live-event"
+
+
+def _event_summary_from_row(row: dict[str, Any]) -> EventSummary:
+    return EventSummary(
+        id=str(row["id"]),
+        title=row.get("title") or "Untitled Event",
+        venue_name=_event_venue_name(row),
+        start_time=row["start_time"],
+        category=_event_category(row),
+        zip_code=_event_zip_code(row),
+        is_promoted=bool(row.get("is_promoted", False)),
+        cover_image_url=row.get("cover_image_url"),
+    )
+
+
+def _fetch_fallback_trending_rows(client: Any, limit_count: int = 20) -> list[dict[str, Any]]:
+    now_utc = datetime.now(timezone.utc).isoformat()
+
+    try:
+        upcoming = (
+            client.table("events")
+            .select(_EVENT_SUMMARY_SELECT)
+            .gte("start_time", now_utc)
+            .order("start_time")
+            .limit(limit_count)
+            .execute()
+        ).data or []
+    except Exception:
+        upcoming = []
+
+    if upcoming:
+        return upcoming
+
+    try:
+        recent = (
+            client.table("events")
+            .select(_EVENT_SUMMARY_SELECT)
+            .order("start_time", desc=True)
+            .limit(limit_count)
+            .execute()
+        ).data or []
+    except Exception:
+        recent = []
+
+    return recent
 
 
 def _parse_type_tokens(value: Optional[str]) -> List[str]:
@@ -64,9 +192,12 @@ def build_event_query(
     venue: Optional[str] = None,
     include_count: bool = False,
     is_promoted: Optional[bool] = None,
+    radius_miles: Optional[float] = None,
 ):
+    venues_join = "venues!inner" if zip_code else "venues"
     select_clause = (
-        "id,title,start_time,category,zip_code,is_promoted,cover_image_url,venues(name, city, state)"
+        f"id,title,start_time,category,zip_code,is_promoted,cover_image_url,venue_name,"
+        f"{venues_join}(name,zip_code,city,state, zip_code)"
     )
 
     table = client.table("events")
@@ -78,7 +209,10 @@ def build_event_query(
     q = q.order("start_time")
 
     if zip_code:
-        q = q.eq("zip_code", zip_code)
+        radius = radius_miles if radius_miles and radius_miles > 0 else DEFAULT_RADIUS_MILES
+        radius = min(radius, MAX_RADIUS_MILES)
+        nearby_zips = find_nearby_zips(zip_code, radius)
+        q = q.in_("venues.zip_code", nearby_zips)
 
     if city:
         q = q.filter("venues.city", "ilike", f"%{city}%")
@@ -120,7 +254,7 @@ def list_events(
 
     query = (
         client.table("events")
-        .select("id,title,start_time,category,zip_code,is_promoted,cover_image_url,venues(name)")
+        .select(_EVENT_SUMMARY_SELECT)
         .order("start_time")
         .limit(limit)
     )
@@ -138,25 +272,14 @@ def list_events(
 
     rows = response.data or []
 
-    return [
-        EventSummary(
-            id=row["id"],
-            title=row["title"],
-            venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
-            start_time=row["start_time"],
-            category=row["category"],
-            zip_code=row["zip_code"],
-            is_promoted=bool(row.get("is_promoted", False)),
-            cover_image_url=row.get("cover_image_url"),
-        )
-        for row in rows
-    ]
+    return [_event_summary_from_row(row) for row in rows]
 
 
 @router.get("/search", response_model=EventSearchResponse)
 def search_events(
     query: Optional[str] = Query(default=None),
     zip_code: Optional[str] = Query(default=None, pattern=r"^\d{5}$"),
+    radius_miles: Optional[float] = Query(default=None, ge=0, le=MAX_RADIUS_MILES),
     city: Optional[str] = Query(default=None),
     state: Optional[str] = Query(default=None),
     start_after: Optional[datetime] = Query(default=None),
@@ -197,6 +320,7 @@ def search_events(
             venue=venue,
             include_count=True,
             is_promoted=is_promoted,
+            radius_miles=radius_miles,
         )
 
         try:
@@ -235,6 +359,7 @@ def search_events(
             venue=venue,
             include_count=True,
             is_promoted=is_promoted,
+            radius_miles=radius_miles,
         ).range(offset, offset + limit - 1)
 
         try:
@@ -248,19 +373,7 @@ def search_events(
         rows = response.data or []
         total = response.count if isinstance(response.count, int) else len(rows)
 
-    items = [
-        EventSummary(
-            id=row["id"],
-            title=row["title"],
-            venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
-            start_time=row["start_time"],
-            category=row["category"],
-            zip_code=row["zip_code"],
-            is_promoted=bool(row.get("is_promoted", False)),
-            cover_image_url=row.get("cover_image_url"),
-        )
-        for row in rows
-    ]
+    items = [_event_summary_from_row(row) for row in rows]
 
     if sort_value != "recommended" and not type_tokens:
         items = [
@@ -326,7 +439,7 @@ async def get_recommended_events(user_id: UUID = Depends(require_user_id)):
     if artist_ids:
         artist_response = (
             client.table("event_artists")
-            .select("events(id,title,start_time,category,zip_code,is_promoted,cover_image_url,venues(name))")
+            .select("events(id,title,start_time,category,zip_code,is_promoted,cover_image_url,venue_name,venues(name,zip_code))")
             .in_("artist_id", artist_ids)
             .execute()
         ).data or []
@@ -347,19 +460,7 @@ async def get_recommended_events(user_id: UUID = Depends(require_user_id)):
 
     combined.sort(key=lambda x: x.get("start_time") or "")
 
-    items = [
-        EventSummary(
-            id=row["id"],
-            title=row["title"],
-            venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
-            start_time=row["start_time"],
-            category=row["category"],
-            zip_code=row["zip_code"],
-            is_promoted=bool(row.get("is_promoted", False)),
-            cover_image_url=row.get("cover_image_url"),
-        )
-        for row in combined
-    ]
+    items = [_event_summary_from_row(row) for row in combined]
 
     return items
 
@@ -390,48 +491,58 @@ async def get_trending_content(limit: int = Query(10, ge=1, le=50)):
 async def get_trending_events():
     client = _get_supabase_client_or_503()
 
-    response = client.rpc("get_popular_events", {"limit_count": 20}).execute()
+    rows: list[dict[str, Any]] = []
+    try:
+        response = client.rpc("get_popular_events", {"limit_count": 20}).execute()
+        rows = response.data or []
+    except Exception:
+        rows = []
 
-    if response.data is None:
-        raise HTTPException(status_code=500, detail="Failed to fetch trending events")
+    if not rows:
+        rows = _fetch_fallback_trending_rows(client, limit_count=20)
 
-    rows = response.data
+    items: list[EventSummary] = []
+    for row in rows:
+        event_id = row.get("event_id") or row.get("id")
+        if event_id is None:
+            continue
 
-    return [
-        EventSummary(
-            id=row["event_id"],
-            title=row.get("title", "Untitled Event"),
-            venue_name=row["venue_name"],
-            start_time=row["start_time"],
-            category=row["category"],
-            zip_code=row["zip_code"],
-            is_promoted=bool(row.get("is_promoted", False)),
-            cover_image_url=row.get("cover_image_url"),
-        )
-        for row in rows
-    ]
+        start_time = row.get("start_time")
+        if not start_time:
+            continue
+
+        summary_row = {**row, "id": event_id}
+        items.append(_event_summary_from_row(summary_row))
+
+    return items
 
 
 @router.get("/{event_id}/artists")
 async def get_event_artists(event_id: str):
     parsed_event_id = _parse_uuid(event_id)
-    if parsed_event_id is None:
-        return []
+    lookup_event_id = _coerce_event_lookup_id(event_id)
 
-    client = _get_supabase_client_or_503()
+    try:
+        client = _get_supabase_client_or_503()
+    except HTTPException as exc:
+        if parsed_event_id is None and exc.status_code == status.HTTP_503_SERVICE_UNAVAILABLE:
+            return []
+        raise
 
     try:
         response = (
             client.table("event_artists")
             .select("artists(id, stage_name, genre, media_url)")
-            .eq("event_id", str(parsed_event_id))
+            .eq("event_id", lookup_event_id)
             .execute()
         )
-    except Exception:
+    except Exception as exc:
+        if _is_invalid_uuid_lookup_error(exc):
+            return []
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Failed to load event artists",
-        )
+        ) from exc
 
     data = response.data or []
     artists = []
@@ -454,26 +565,24 @@ async def get_event_artists(event_id: str):
 @router.get("/{event_id}", response_model=EventDetail)
 def get_event(event_id: str):
     parsed_event_id = _parse_uuid(event_id)
-    if parsed_event_id is None:
-        raise HTTPException(status_code=404, detail="Event not found")
-
-    client = _get_supabase_client_or_503()
+    lookup_event_id = _coerce_event_lookup_id(event_id)
 
     try:
-        response = (
-            client.table("events")
-            .select(
-                "id,title,description,start_time,end_time,category,zip_code,ticket_url,cover_image_url,price,age_requirement,capacity,venues(name)"
-            )
-            .eq("id", str(parsed_event_id))
-            .single()
-            .execute()
-        )
-    except Exception:
+        client = _get_supabase_client_or_503()
+    except HTTPException as exc:
+        if parsed_event_id is None and exc.status_code == status.HTTP_503_SERVICE_UNAVAILABLE:
+            raise HTTPException(status_code=404, detail="Event not found") from exc
+        raise
+
+    try:
+        response = _fetch_event_row_with_optional_fallback(client, lookup_event_id)
+    except Exception as exc:
+        if _is_invalid_uuid_lookup_error(exc):
+            raise HTTPException(status_code=404, detail="Event not found") from exc
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Failed to load event",
-        )
+        ) from exc
 
     row = response.data
 
@@ -484,11 +593,11 @@ def get_event(event_id: str):
         id=row["id"],
         title=row["title"],
         description=row.get("description", ""),
-        venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
+        venue_name=_event_venue_name(row),
         start_time=row["start_time"],
         end_time=row.get("end_time") or row["start_time"],
-        category=row["category"],
-        zip_code=row["zip_code"],
+        category=_event_category(row),
+        zip_code=_event_zip_code(row),
         ticket_url=row.get("ticket_url"),
         cover_image_url=row.get("cover_image_url"),
         price=row.get("price"),

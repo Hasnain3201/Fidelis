@@ -88,7 +88,7 @@ export default async function VenueDetailPage({ params }: VenueDetailPageProps) 
             </div>
 
             <div className="eventDetailCard">
-              <p className="eventDetailType">{venue.verified ? "Verified Venue" : "Venue"}</p>
+              <p className="eventDetailType">Venue</p>
               <h1>{venue.name}</h1>
               <p className="meta">{venue.description?.trim() || "No venue description has been added yet."}</p>
 
@@ -99,11 +99,11 @@ export default async function VenueDetailPage({ params }: VenueDetailPageProps) 
                 </div>
                 <div className="eventMetaItem">
                   <strong>ZIP Code</strong>
-                  <span>{venue.zip_code}</span>
+                  <span>{venue.zip_code ?? "Location TBD"}</span>
                 </div>
                 <div className="eventMetaItem">
                   <strong>Status</strong>
-                  <span>{venue.verified ? "Verified" : "Community Venue"}</span>
+                  <span>Venue profile</span>
                 </div>
                 <div className="eventMetaItem">
                   <strong>Upcoming Events</strong>
@@ -112,8 +112,8 @@ export default async function VenueDetailPage({ params }: VenueDetailPageProps) 
               </div>
 
               <div className="tagRow">
-                <span className="tagPill">{venue.verified ? "Verified" : "Venue"}</span>
-                <span className="tagPill">{venue.zip_code}</span>
+                <span className="tagPill">Venue</span>
+                {venue.zip_code ? <span className="tagPill">{venue.zip_code}</span> : null}
               </div>
 
               <div className="eventDetailActions">
@@ -142,7 +142,7 @@ export default async function VenueDetailPage({ params }: VenueDetailPageProps) 
           <aside className="eventDetailSidebar">
             <div className="eventSidebarCard">
               <h2>About This Venue</h2>
-              <p className="meta">Loaded from live backend data through FastAPI `/api/v1/venues/{id}`.</p>
+              <p className="meta">{venue.description || "No description available yet."}</p>
             </div>
 
             <div className="eventSidebarCard">

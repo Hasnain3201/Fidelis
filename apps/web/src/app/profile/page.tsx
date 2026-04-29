@@ -8,7 +8,7 @@ import { getPoints, getVipStatus } from "@/lib/points";
 import { LiveyPointsBadge } from "@/components/livey-points";
 
 const AVATAR_KEY = "livey.profile.avatar";
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://fidelisappsapi-production.up.railway.app";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const GENRE_OPTIONS = [
   "live-music",
@@ -241,6 +241,13 @@ export default function ProfilePage() {
     };
   }, [session]);
 
+  const avatarFallbackSeed =
+    profile?.display_name?.trim() ||
+    profile?.username?.trim() ||
+    session?.email?.trim() ||
+    "U";
+  const avatarFallbackInitial = avatarFallbackSeed.charAt(0).toUpperCase() || "U";
+
   function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -464,7 +471,7 @@ export default function ProfilePage() {
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={avatarUrl} alt="Profile" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     ) : (
-                      (profile?.display_name ?? profile?.username ?? session.email ?? "U")[0].toUpperCase()
+                      avatarFallbackInitial
                     )}
                   </button>
                   <div

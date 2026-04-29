@@ -115,7 +115,7 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
                 </div>
                 <div className="eventMetaItem">
                   <strong>ZIP Code</strong>
-                  <span>{event.zip_code}</span>
+                  <span>{event.zip_code ?? "Location TBD"}</span>
                 </div>
                 <div className="eventMetaItem">
                   <strong>Category</strong>
@@ -173,60 +173,12 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
           <aside className="eventDetailSidebar">
             <div className="eventSidebarCard">
               <h2>About This Event</h2>
-              <p className="meta">Loaded from live backend data through FastAPI `/api/v1/events/{id}`.</p>
+              <p className="meta">{event.description || "No description available yet."}</p>
             </div>
 
             <div className="eventSidebarCard">
               <h2>Venue Snapshot</h2>
-              <p className="meta" style={{ fontWeight: 600, marginBottom: 10 }}>{event.venue_name}</p>
-              <div style={{ display: "grid", gap: 8 }}>
-                <a
-                  href={`https://www.google.com/search?q=${encodeURIComponent(event.venue_name + " website")}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 7,
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: "#6942d6",
-                    textDecoration: "none",
-                    padding: "8px 12px",
-                    borderRadius: 9,
-                    background: "#f3eeff",
-                    border: "1px solid #dacfff",
-                  }}
-                >
-                  🌐 Venue Website
-                </a>
-                <a
-                  href={`https://www.opentable.com/s?query=${encodeURIComponent(event.venue_name)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 7,
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: "#c0365a",
-                    textDecoration: "none",
-                    padding: "8px 12px",
-                    borderRadius: 9,
-                    background: "#fff0f4",
-                    border: "1px solid #f5c0cc",
-                  }}
-                >
-                  🍽 Reserve a Table
-                </a>
-              </div>
-            </div>
-
-            <div className="eventSidebarCard">
-              <h2>🔔 Get Reminded</h2>
-              <p className="meta" style={{ marginBottom: 12, fontSize: 13 }}>Don&apos;t miss this event — set a reminder.</p>
-              <EventReminder eventId={event.id} eventTitle={event.title} />
+              <p className="meta">{event.venue_name}</p>
             </div>
 
             <div className="eventSidebarCard">
