@@ -16,6 +16,7 @@ class EventSummary(BaseModel):
     zip_code: Optional[str] = Field(default=None, pattern=r"^\d{5}$")
     is_promoted: bool = False
     cover_image_url: Optional[str] = None
+    price: Optional[float] = None
 
 
 class EventDetail(BaseModel):

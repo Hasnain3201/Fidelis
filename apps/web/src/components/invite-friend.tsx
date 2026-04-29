@@ -3,11 +3,20 @@
 import { useState } from "react";
 import { awardPoints } from "@/lib/points";
 
+function getInviteCode(): string {
+  if (window.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(8);
+    window.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function getInviteLink(): string {
   if (typeof window === "undefined") return "https://liveyapp.com/join";
   const base = window.location.origin;
-  // Generate a simple invite code from timestamp
-  const code = btoa(`livey-${Date.now()}`).slice(0, 8);
+  const code = getInviteCode();
   return `${base}/join?ref=${code}`;
 }
 

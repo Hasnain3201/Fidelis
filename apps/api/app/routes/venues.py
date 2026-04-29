@@ -316,7 +316,7 @@ def get_my_venue_events(
     try:
         response = (
             admin.table("events")
-            .select("id,title,start_time,category,zip_code,venues(name)")
+            .select("id,title,start_time,category,zip_code,price,venues(name)")
             .eq("venue_id", venue_id)
             .order("start_time")
             .limit(limit)
@@ -337,6 +337,7 @@ def get_my_venue_events(
             start_time=row["start_time"],
             category=row["category"],
             zip_code=row["zip_code"],
+            price=row.get("price"),
         )
         for row in rows
     ]
@@ -531,7 +532,7 @@ def get_venue_events(
         now_utc = datetime.now(timezone.utc).isoformat()
         response = (
             client.table("events")
-            .select("id,title,start_time,category,zip_code,is_promoted,venues(name)")
+            .select("id,title,start_time,category,zip_code,is_promoted,price,venues(name)")
             .eq("venue_id", str(parsed_venue_id))
             .gte("start_time", now_utc)
             .order("start_time")
@@ -554,6 +555,7 @@ def get_venue_events(
             category=row["category"],
             zip_code=row["zip_code"],
             is_promoted=bool(row.get("is_promoted", False)),
+            price=row.get("price"),
         )
         for row in rows
     ]

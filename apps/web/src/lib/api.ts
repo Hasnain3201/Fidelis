@@ -10,6 +10,7 @@ export type EventSummary = {
   zip_code?: string | null;
   is_promoted: boolean;
   cover_image_url?: string | null;
+  price?: number | null;
 };
 
 export type EventSearchResponse = {

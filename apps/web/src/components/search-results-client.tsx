@@ -90,9 +90,26 @@ function formatTimeLabel(value: string): string {
   });
 }
 
-function mapSummaryToCardItem(item: EventSummary, index: number): EventCardItem {
+function formatPriceLabel(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "TBD";
+  if (value <= 0) return "Free";
+  return `$${value % 1 === 0 ? value.toFixed(0) : value.toFixed(2)}`;
+}
+
+function parsePriceForFilter(price: string): number | null {
+  const normalized = price.trim().toLowerCase();
+  if (!normalized || normalized === "tbd" || normalized === "n/a") return null;
+  if (normalized.includes("free")) return 0;
+
+  const match = normalized.match(/\d+(?:\.\d+)?/);
+  if (!match) return null;
+
+  const value = Number(match[0]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function mapSummaryToCardItem(item: EventSummary): EventCardItem {
   const categoryLabel = toTitleCase(item.category);
-  const zip = item.zip_code ?? "";
   return {
     id: item.id,
     title: item.title,
@@ -103,7 +120,7 @@ function mapSummaryToCardItem(item: EventSummary, index: number): EventCardItem 
     zipCode: item.zip_code ?? "",
     location: item.zip_code ?? "Location TBD",
     venue: item.venue_name,
-    price: "TBD",
+    price: formatPriceLabel(item.price),
     image: getCoverImage(item.cover_image_url, "event"),
     tags: [categoryLabel],
   };
@@ -361,9 +378,7 @@ export function SearchResultsClient() {
         }
 
         setResults(
-          response.items.map((item, index) =>
-            mapSummaryToCardItem(item, (snapshot.page - 1) * PAGE_SIZE + index),
-          ),
+          response.items.map((item) => mapSummaryToCardItem(item)),
         );
         setTotalResults(response.total);
       })
@@ -414,6 +429,8 @@ export function SearchResultsClient() {
     setDateWindow("any");
     setSortBy("recommended");
     setSelectedTypes([]);
+    setAgeFilter("all");
+    setMaxCost(200);
     setParams({
       venue: null,
       category: null,
@@ -429,7 +446,8 @@ export function SearchResultsClient() {
     selectedTypes.length +
     (activeCategory !== "All" ? 1 : 0) +
     (dateWindow !== "any" ? 1 : 0) +
-    (venueQuery.trim() ? 1 : 0);
+    (venueQuery.trim() ? 1 : 0) +
+    (maxCost < 200 ? 1 : 0);
 
   const chips = useMemo(() => {
     const out: { key: string; label: string; onRemove: () => void }[] = [];
@@ -502,13 +520,14 @@ export function SearchResultsClient() {
   const filteredResults = useMemo(() => {
     return results.filter((item) => {
       if (maxCost < 200) {
-        const priceNum = parseFloat(item.price.replace(/[^0-9.]/g, ""));
-        if (!isNaN(priceNum) && priceNum > maxCost) return false;
+        const priceNum = parsePriceForFilter(item.price);
+        return priceNum !== null && priceNum <= maxCost;
       }
       // age filter is UI-only for now — API items don't carry age_requirement
       return true;
     });
   }, [results, maxCost]);
+  const hasPriceFilteredOutCurrentPage = !isFiltering && maxCost < 200 && totalResults > 0 && filteredResults.length === 0;
 
   const summaryParts: string[] = [];
   if (query.trim()) summaryParts.push(`"${query.trim()}"`);
@@ -798,12 +817,16 @@ export function SearchResultsClient() {
               Use a valid US ZIP format like <strong>78701</strong> or <strong>78701-1234</strong>.
             </p>
           </div>
-        ) : totalResults === 0 ? (
+        ) : totalResults === 0 || hasPriceFilteredOutCurrentPage ? (
           <div className="emptyStateCard" style={{ marginTop: 16, textAlign: "center", padding: "36px 24px" }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>🎵</div>
-            <h3 style={{ margin: "0 0 8px" }}>No events matched your search</h3>
+            <h3 style={{ margin: "0 0 8px" }}>
+              {hasPriceFilteredOutCurrentPage ? "No events matched your price filter" : "No events matched your search"}
+            </h3>
             <p className="meta" style={{ margin: "0 0 16px" }}>
-              Try widening the date range, removing filters, or searching a nearby ZIP code.
+              {hasPriceFilteredOutCurrentPage
+                ? "Try increasing the max price or clearing filters."
+                : "Try widening the date range, removing filters, or searching a nearby ZIP code."}
             </p>
             <div className="pageActions" style={{ justifyContent: "center", margin: 0 }}>
               <a href="/search" className="pageActionLink secondary">Clear Filters</a>

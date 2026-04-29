@@ -86,7 +86,7 @@ def _fetch_event_row_with_optional_fallback(client: Any, lookup_event_id: str):
         )
 
 
-_EVENT_SUMMARY_SELECT = "id,title,start_time,category,zip_code,is_promoted,cover_image_url,venue_name,venues(name,zip_code,city,state)"
+_EVENT_SUMMARY_SELECT = "id,title,start_time,category,zip_code,is_promoted,cover_image_url,price,venue_name,venues(name,zip_code,city,state)"
 
 
 def _embedded_venue(row: dict[str, Any]) -> dict[str, Any]:
@@ -120,6 +120,7 @@ def _event_summary_from_row(row: dict[str, Any]) -> EventSummary:
         zip_code=_event_zip_code(row),
         is_promoted=bool(row.get("is_promoted", False)),
         cover_image_url=row.get("cover_image_url"),
+        price=row.get("price"),
     )
 
 
@@ -196,7 +197,7 @@ def build_event_query(
 ):
     venues_join = "venues!inner" if zip_code else "venues"
     select_clause = (
-        f"id,title,start_time,category,zip_code,is_promoted,cover_image_url,venue_name,"
+        f"id,title,start_time,category,zip_code,is_promoted,cover_image_url,price,venue_name,"
         f"{venues_join}(name,zip_code,city,state, zip_code)"
     )
 
@@ -439,7 +440,7 @@ async def get_recommended_events(user_id: UUID = Depends(require_user_id)):
     if artist_ids:
         artist_response = (
             client.table("event_artists")
-            .select("events(id,title,start_time,category,zip_code,is_promoted,cover_image_url,venue_name,venues(name,zip_code))")
+            .select("events(id,title,start_time,category,zip_code,is_promoted,cover_image_url,price,venue_name,venues(name,zip_code))")
             .in_("artist_id", artist_ids)
             .execute()
         ).data or []

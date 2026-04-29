@@ -15,6 +15,7 @@ def _event(
     start: datetime,
     zip_code: Optional[str] = "10001",
     venue_zip_code: Optional[str] = None,
+    price: Optional[float] = None,
 ):
     return {
         "id": event_id,
@@ -24,6 +25,7 @@ def _event(
         "start_time": start.isoformat(),
         "category": category,
         "zip_code": zip_code,
+        "price": price,
     }
 
 
@@ -149,6 +151,34 @@ def test_search_falls_back_to_venue_zip_when_event_zip_missing(mock_get_client, 
     assert resp.status_code == 200
     body = resp.json()
     assert body["items"][0]["zip_code"] == "10003"
+
+
+@patch("app.routes.events.build_event_query")
+@patch("app.routes.events.get_supabase_client")
+def test_search_includes_price_in_summary(mock_get_client, mock_build_event_query, anon_client):
+    now = datetime.now(timezone.utc)
+    response_rows = [
+        _event(
+            "evt_priced",
+            title="Priced Show",
+            venue="Blue Room",
+            category="live-music",
+            start=now + timedelta(days=1),
+            price=25.0,
+        )
+    ]
+
+    query = MagicMock()
+    query.range.return_value = query
+    query.execute.return_value = SimpleNamespace(data=response_rows, count=1)
+    mock_get_client.return_value = MagicMock()
+    mock_build_event_query.return_value = query
+
+    resp = anon_client.get("/api/v1/events/search", params={"zip_code": "10001"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["items"][0]["price"] == 25.0
 
 
 def test_scraped_event_inherits_venue_zip_when_event_zip_missing():
