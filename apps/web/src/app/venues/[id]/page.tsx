@@ -142,7 +142,7 @@ export default async function VenueDetailPage({ params }: VenueDetailPageProps) 
           <aside className="eventDetailSidebar">
             <div className="eventSidebarCard">
               <h2>About This Venue</h2>
-              <p className="meta">Loaded from live backend data through FastAPI `/api/v1/venues/{id}`.</p>
+              <p className="meta">{venue.description || "No description available yet."}</p>
             </div>
 
             <div className="eventSidebarCard">

@@ -21,7 +21,7 @@ class EventSummary(BaseModel):
 class EventDetail(BaseModel):
     id: str
     title: str
-    description: str
+    description: Optional[str] = None
     venue_name: str
     category: str
     start_time: datetime

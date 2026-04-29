@@ -161,16 +161,12 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
           <aside className="eventDetailSidebar">
             <div className="eventSidebarCard">
               <h2>About This Event</h2>
-              <p className="meta">Loaded from live backend data through FastAPI `/api/v1/events/{id}`.</p>
+              <p className="meta">{event.description || "No description available yet."}</p>
             </div>
 
             <div className="eventSidebarCard">
               <h2>Venue Snapshot</h2>
               <p className="meta">{event.venue_name}</p>
-              <p className="meta">
-                Event details, timing, category, and ticket link are now sourced from API payloads instead of Week 2 mock
-                cards.
-              </p>
             </div>
 
             <div className="eventSidebarCard">
