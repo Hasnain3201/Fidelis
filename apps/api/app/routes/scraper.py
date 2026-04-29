@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Literal, Optional
+from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, HttpUrl
 
 from app.core.auth import AuthContext, require_role
@@ -21,37 +21,27 @@ _admin = Depends(require_role("admin"))
 # Request / response schemas
 # ---------------------------------------------------------------------------
 
-class ScrapeVenueRequest(BaseModel):
+class ScrapeRequest(BaseModel):
     url: HttpUrl
+    venue_id: Optional[str] = None  # optional hint when scraping for an existing venue
     enable_render: bool = False
     multi_page: bool = True
 
 
-class ScrapeEventsRequest(BaseModel):
-    url: HttpUrl
-    venue_id: Optional[str] = None
-    enable_render: bool = False
-    multi_page: bool = True
-
-
-class ScrapeResult(BaseModel):
+class UnifiedScrapeResult(BaseModel):
     success: bool
     detail: str | None = None
     venue_id: str | None = None
-    action: str | None = None
-    data: dict | None = None
-    # Raw page snapshot (text, contacts, meta, JSON-LD) for admin content preview.
-    content_preview: dict | None = None
-
-
-class ScrapeEventsResult(BaseModel):
-    success: bool
-    detail: str | None = None
-    venue_id: str | None = None
-    saved: int = 0
-    updated: int = 0
-    skipped: int = 0
+    venue_action: str | None = None  # "created" | "merged" | None
+    saved: int = 0       # new events inserted
+    updated: int = 0     # existing events merged
+    skipped: int = 0     # stale/invalid events
     event_ids: list[str] = []
+    artists_created: int = 0
+    artists_merged: int = 0
+    artist_ids: list[str] = []
+    links_created: int = 0
+    data: dict | None = None  # raw AI extraction (venue/events/artists) — useful for debugging
     content_preview: dict | None = None
 
 
@@ -66,7 +56,6 @@ class WorkerStatusResponse(BaseModel):
     jobs_processed: int
     max_jobs: Optional[int] = None
     current_url: Optional[str] = None
-    current_mode: Optional[str] = None
 
 
 class WorkerStartRequest(BaseModel):
@@ -85,10 +74,10 @@ class WorkerStartResponse(BaseModel):
 
 @router.post("/scrape/preview", response_model=ScrapePreviewResponse)
 def scrape_content_preview_only(
-    body: ScrapeVenueRequest,
+    body: ScrapeRequest,
     auth: AuthContext = _admin,
 ) -> ScrapePreviewResponse:
-    """Fetch and parse URL only (no AI, no DB). Same raw fields as scraper-old Content Preview step."""
+    """Fetch and parse URL only (no AI, no DB). Used by the admin Content Preview tab."""
     from app.services.scraper import ScraperService
     from app.services.scraper.utils import build_content_preview
 
@@ -102,173 +91,86 @@ def scrape_content_preview_only(
     return ScrapePreviewResponse(success=True, content_preview=preview)
 
 
-@router.post("/scrape/venues", response_model=ScrapeResult)
-def scrape_venue(
-    body: ScrapeVenueRequest,
-    dry_run: bool = Query(False, description="If true, do not write to Supabase; return would-be insert payload."),
-    auth: AuthContext = _admin,
-) -> ScrapeResult:
-    """Scrape a venue URL, extract structured data via AI, and save to Supabase."""
-    from app.services.scraper import ScraperService, AIService
-    from app.services.scraper.utils import build_content_preview, map_venue_to_supabase
-    from app.repositories.venues import VenueRepository
-    from app.repositories.notifications import NotificationRepository
+def _run_unified_scrape(body: ScrapeRequest, dry_run: bool, user_id: str | None = None) -> UnifiedScrapeResult:
+    """Synchronous unified scrape — used by both /scrape/venues and /scrape/events."""
+    from app.services.scraper.worker import _run_job
 
-    url = str(body.url)
-
-    scraper = ScraperService()
-    raw = scraper.extract_venue_data(url, enable_render=body.enable_render, multi_page=body.multi_page, mode="venue")
-    if "error" in raw:
-        raise HTTPException(status_code=502, detail=raw["error"])
-
-    content_preview = build_content_preview(raw)
-
-    ai = AIService()
-    structured = ai.process_venue_data(raw)
-    if "error" in structured:
-        raise HTTPException(status_code=502, detail=structured["error"])
-
-    structured["scraped_at"] = datetime.now(timezone.utc).isoformat()
-    structured["source_url"] = url
-
-    if not structured.get("description") and content_preview.get("description"):
-        structured["description"] = content_preview["description"]
-
-    if dry_run:
-        payload = map_venue_to_supabase(structured, url)
-        logger.info("SCRAPER_DRY_RUN venue payload: %s", payload)
-        return ScrapeResult(
-            success=True,
-            detail="dry_run=true (no Supabase writes)",
-            data=payload,
-            content_preview=content_preview,
-        )
-
-    repo = VenueRepository()
-    result = repo.save_venue(structured, url)
+    job = {
+        "url": str(body.url),
+        "mode": "unified",
+        "enable_render": body.enable_render,
+        "multi_page": body.multi_page,
+        "dry_run": dry_run,
+        "venue_id_hint": body.venue_id,
+    }
 
     try:
-        NotificationRepository().create(
-            type=f"venue_{result['action']}",
-            entity_type="venue",
-            entity_id=result["venue_id"],
-            entity_name=structured.get("venue_name") or structured.get("name"),
-            message=f"Venue {result['action']} from {url}",
-        )
-    except Exception:
-        logger.warning("Failed to create notification", exc_info=True)
+        result = _run_job(job)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
-    return ScrapeResult(
-        success=True,
-        venue_id=result["venue_id"],
-        action=result["action"],
-        data=structured,
-        content_preview=content_preview,
-    )
-
-
-@router.post("/scrape/events", response_model=ScrapeEventsResult)
-def scrape_events(
-    body: ScrapeEventsRequest,
-    dry_run: bool = Query(False, description="If true, do not write to Supabase; return would-be insert payloads."),
-    auth: AuthContext = _admin,
-) -> ScrapeEventsResult:
-    """Scrape an events-listing URL, extract via AI, and save to Supabase."""
-    from app.services.scraper import ScraperService, AIService
-    from app.services.scraper.utils import (
-        build_content_preview,
-        map_event_to_supabase,
-        map_venue_to_supabase,
-    )
-    from app.repositories.venues import VenueRepository
-    from app.repositories.events import EventRepository
-    from app.repositories.notifications import NotificationRepository
-
-    url = str(body.url)
-
-    scraper = ScraperService()
-    raw = scraper.extract_venue_data(url, enable_render=body.enable_render, multi_page=body.multi_page, mode="events")
-    if "error" in raw:
-        raise HTTPException(status_code=502, detail=raw["error"])
-
-    content_preview = build_content_preview(raw)
-
-    ai = AIService()
-    ai_result = ai.process_events_data(raw)
-    if "error" in ai_result:
-        raise HTTPException(status_code=502, detail=ai_result["error"])
-
-    venue_id = body.venue_id
-    venue_name: str | None = None
-    venue_repo = VenueRepository()
-
-    # If the AI found venue info, save/merge it first to get a UUID
-    ai_venue = ai_result.get("venue")
-    if ai_venue and not venue_id:
-        venue_desc = ai_venue.get("description") or content_preview.get("description") or None
-        mapped_venue = {
-            "venue_name": ai_venue.get("name") or ai_venue.get("venue_name"),
-            "description": venue_desc,
-            "venue_address": ai_venue.get("address") or {},
-            "website": ai_venue.get("website") or url,
-            "source_url": url,
-            "scraped_at": datetime.now(timezone.utc).isoformat(),
-        }
-        if dry_run:
-            venue_payload = map_venue_to_supabase(mapped_venue, url)
-        else:
-            v_result = venue_repo.save_venue(mapped_venue, url)
-            venue_id = v_result["venue_id"]
-            venue_name = mapped_venue.get("venue_name")
-    elif venue_id:
-        v = venue_repo.get_venue(venue_id)
-        venue_name = v["name"] if v else None
-
-    events = ai_result.get("events") or []
+    if result.get("unreachable"):
+        raise HTTPException(status_code=502, detail=result.get("reason") or "URL unreachable")
 
     if dry_run:
-        event_payloads = [
-            map_event_to_supabase(ev, venue_id, venue_name, url)
-            for ev in events
-            if isinstance(ev, dict)
-        ]
-        logger.info("SCRAPER_DRY_RUN venue_payload: %s", locals().get("venue_payload"))
-        logger.info("SCRAPER_DRY_RUN event_payloads: %s", event_payloads)
-        return ScrapeEventsResult(
+        return UnifiedScrapeResult(
             success=True,
             detail="dry_run=true (no Supabase writes)",
-            venue_id=venue_id,
-            saved=0,
-            updated=0,
-            skipped=0,
-            event_ids=[],
-            content_preview=content_preview,
+            data={
+                "venue": result.get("venue"),
+                "events": result.get("events") or [],
+                "artists": result.get("artists") or [],
+            },
+            content_preview=result.get("content_preview"),
         )
 
-    event_repo = EventRepository()
-    summary = event_repo.save_events(events, venue_id, venue_name, url)
-
-    try:
-        notif = NotificationRepository()
-        for eid in summary.get("event_ids", []):
-            notif.create(
-                type="event_created",
-                entity_type="event",
-                entity_id=eid,
-                message=f"Event saved from {url}",
-            )
-    except Exception:
-        logger.warning("Failed to create notifications", exc_info=True)
-
-    return ScrapeEventsResult(
+    return UnifiedScrapeResult(
         success=True,
-        venue_id=venue_id,
-        saved=summary["saved"],
-        updated=summary["updated"],
-        skipped=summary["skipped"],
-        event_ids=summary["event_ids"],
-        content_preview=content_preview,
+        venue_id=result.get("venue_id"),
+        venue_action=result.get("venue_action"),
+        saved=result.get("saved", 0),
+        updated=result.get("updated", 0),
+        skipped=result.get("skipped", 0),
+        event_ids=result.get("event_ids") or [],
+        artists_created=result.get("artists_created", 0),
+        artists_merged=result.get("artists_merged", 0),
+        artist_ids=result.get("artist_ids") or [],
+        links_created=result.get("links_created", 0),
+        data={
+            "events": result.get("events") or [],
+            "artists": result.get("artists") or [],
+        },
+        content_preview=result.get("content_preview"),
     )
+
+
+@router.post("/scrape", response_model=UnifiedScrapeResult)
+def scrape_unified(
+    body: ScrapeRequest,
+    dry_run: bool = Query(False, description="If true, do not write to Supabase; return AI extraction only."),
+    auth: AuthContext = _admin,
+) -> UnifiedScrapeResult:
+    """Unified scrape: extract venue + events + artists from any URL in one call."""
+    return _run_unified_scrape(body, dry_run, user_id=auth.user_id)
+
+
+# Legacy aliases — both old endpoints now run the unified flow.
+@router.post("/scrape/venues", response_model=UnifiedScrapeResult)
+def scrape_venue_legacy(
+    body: ScrapeRequest,
+    dry_run: bool = Query(False),
+    auth: AuthContext = _admin,
+) -> UnifiedScrapeResult:
+    return _run_unified_scrape(body, dry_run, user_id=auth.user_id)
+
+
+@router.post("/scrape/events", response_model=UnifiedScrapeResult)
+def scrape_events_legacy(
+    body: ScrapeRequest,
+    dry_run: bool = Query(False),
+    auth: AuthContext = _admin,
+) -> UnifiedScrapeResult:
+    return _run_unified_scrape(body, dry_run, user_id=auth.user_id)
 
 
 # ---------------------------------------------------------------------------
@@ -278,11 +180,10 @@ def scrape_events(
 
 class EnqueueBatchRequest(BaseModel):
     urls: list[str] = Field(..., min_length=1)
-    mode: Literal["venue", "events"]
     enable_render: bool = False
     multi_page: bool = True
     dry_run: bool = False
-    venue_id: Optional[str] = None  # only meaningful for events mode
+    venue_id: Optional[str] = None  # optional hint forwarded to the worker
 
 
 class EnqueueBatchResponse(BaseModel):
@@ -301,13 +202,12 @@ def enqueue_scrape_batch(
     body: EnqueueBatchRequest,
     auth: AuthContext = _admin,
 ) -> EnqueueBatchResponse:
-    """Enqueue a batch of URLs for the worker to scrape one-by-one."""
+    """Enqueue a batch of URLs for the worker to scrape one-by-one (unified extraction)."""
     from app.services.scraper.queue_service import QueueService
 
     try:
         result = QueueService().enqueue_batch(
             urls=body.urls,
-            mode=body.mode,
             enable_render=body.enable_render,
             multi_page=body.multi_page,
             dry_run=body.dry_run,
@@ -435,7 +335,6 @@ async def get_worker_status(auth: AuthContext = _admin) -> WorkerStatusResponse:
         jobs_processed=w.jobs_processed,
         max_jobs=w.max_jobs,
         current_url=w.current_url,
-        current_mode=w.current_mode,
     )
 
 
@@ -466,7 +365,6 @@ async def stop_worker_endpoint(auth: AuthContext = _admin) -> WorkerStatusRespon
         jobs_processed=w.jobs_processed,
         max_jobs=w.max_jobs,
         current_url=w.current_url,
-        current_mode=w.current_mode,
     )
 
 

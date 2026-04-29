@@ -69,6 +69,12 @@ class EventRepository:
             fp = row.get("fingerprint")
             if not fp:
                 continue
+            # Events table requires start_time NOT NULL. AI sometimes produces
+            # events with vague text dates ("tomorrow", "next week") that don't
+            # resolve to ISO timestamps — skip those rather than crash.
+            if not row.get("start_time"):
+                skipped += 1
+                continue
 
             existing = self._find_by_fingerprint(fp)
 

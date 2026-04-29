@@ -1,4 +1,3 @@
-from .venue_prompts import VenuePrompts
-from .event_prompts import EventPrompts
+from .unified_prompts import UnifiedPrompts
 
-__all__ = ["VenuePrompts", "EventPrompts"]
+__all__ = ["UnifiedPrompts"]

@@ -291,3 +291,69 @@ class EventsExtraction(BaseModel):
             "events": [e.to_mapper_dict() for e in self.events],
             "venue": self.venue.to_mapper_dict() if self.venue else None,
         }
+
+
+class ArtistExtraction(BaseModel):
+    """Minimal artist payload returned by the AI (stage_name + optional genre)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    stage_name: str | None = None
+    genre: str | None = None
+
+    @classmethod
+    def from_ai_dict(cls, raw: Any) -> "ArtistExtraction":
+        d = _clean_dict(raw)
+        return cls(
+            stage_name=_clean_str(d.get("stage_name") or d.get("name")),
+            genre=_clean_str(d.get("genre")),
+        )
+
+    def to_mapper_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
+class UnifiedExtraction(BaseModel):
+    """Top-level result of a unified AI extraction: venue + events + artists."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    venue: VenueExtraction | None = None
+    events: list[EventExtraction] = Field(default_factory=list)
+    artists: list[ArtistExtraction] = Field(default_factory=list)
+
+    @classmethod
+    def from_ai_dict(cls, raw: Any) -> "UnifiedExtraction":
+        d = _clean_dict(raw)
+
+        venue_raw = d.get("venue")
+        venue = VenueExtraction.from_ai_dict(venue_raw) if isinstance(venue_raw, dict) else None
+        if venue is not None and not venue.venue_name and venue.venue_address.is_empty():
+            venue = None
+
+        events_raw = _clean_list(d.get("events"))
+        events = [EventExtraction.from_ai_dict(e) for e in events_raw if isinstance(e, dict)]
+
+        artists_raw = _clean_list(d.get("artists"))
+        artists: list[ArtistExtraction] = []
+        seen: set[str] = set()
+        for a in artists_raw:
+            if not isinstance(a, dict):
+                continue
+            ax = ArtistExtraction.from_ai_dict(a)
+            if not ax.stage_name:
+                continue
+            key = ax.stage_name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            artists.append(ax)
+
+        return cls(venue=venue, events=events, artists=artists)
+
+    def to_mapper_dict(self) -> dict:
+        return {
+            "venue": self.venue.to_mapper_dict() if self.venue else None,
+            "events": [e.to_mapper_dict() for e in self.events],
+            "artists": [a.to_mapper_dict() for a in self.artists],
+        }

@@ -17,7 +17,9 @@ from app.db.supabase_admin import get_supabase_admin_client
 logger = logging.getLogger(__name__)
 
 
-VALID_MODES = {"venue", "events"}
+# Legacy mode values are accepted for backwards compatibility with old queue rows;
+# all new jobs are written as "unified".
+VALID_MODES = {"unified", "venue", "events"}
 VALID_STATUSES = {"pending", "in_progress", "completed", "failed"}
 
 
@@ -41,7 +43,6 @@ class QueueService:
     def enqueue_batch(
         self,
         urls: list[str],
-        mode: str,
         *,
         enable_render: bool = False,
         multi_page: bool = True,
@@ -51,8 +52,7 @@ class QueueService:
         created_by: str | None = None,
     ) -> dict[str, Any]:
         """Insert one row per URL. Returns {batch_id, job_ids}."""
-        if mode not in VALID_MODES:
-            raise ValueError(f"Invalid mode '{mode}'. Use one of {VALID_MODES}")
+        mode = "unified"
 
         cleaned: list[str] = []
         for u in urls or []:
@@ -248,7 +248,7 @@ class QueueService:
         new_row = {
             "batch_id": existing.get("batch_id"),
             "url": existing["url"],
-            "mode": existing["mode"],
+            "mode": "unified",
             "status": "pending",
             "enable_render": existing.get("enable_render", False),
             "multi_page": existing.get("multi_page", True),

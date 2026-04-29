@@ -18,14 +18,14 @@ import {
   type ContentPreview,
 } from "./ContentPreviewPanel";
 
-type ScrapeMode = "venue" | "events";
 type JobStatus = "pending" | "in_progress" | "completed" | "failed";
 
 type ScrapeJob = {
   id: string;
   batch_id: string | null;
   url: string;
-  mode: ScrapeMode;
+  // Legacy field — older queue rows have "venue"/"events"; new rows are "unified".
+  mode: string;
   status: JobStatus;
   enable_render: boolean;
   dry_run: boolean;
@@ -117,25 +117,34 @@ function ResultSummaryCard({ job }: { job: ScrapeJob }) {
   } else if (isUnreachable) {
     headline = "Unreachable";
     subline = (result.reason as string)?.slice(0, 200) ?? "Site could not be fetched";
-  } else if (job.mode === "venue") {
-    const structured = (result.structured as Record<string, unknown>) ?? {};
-    const addr = (structured.venue_address as Record<string, string>) ?? {};
-    headline =
-      (structured.venue_name as string) ||
-      (result.venue_name as string) ||
-      "Unknown venue";
-    const city = addr.city ?? "";
-    const state = addr.state ?? "";
-    const action = (result.action as string) ?? "";
-    subline = [action, [city, state].filter(Boolean).join(", ")].filter(Boolean).join(" · ");
-  } else if (job.mode === "events") {
+  } else {
+    const venueAction = (result.venue_action as string) ?? null;
+    const venueId = (result.venue_id as string) ?? null;
     const saved = (result.saved as number) ?? 0;
     const updated = (result.updated as number) ?? 0;
     const skipped = (result.skipped as number) ?? 0;
-    headline = `${saved} saved · ${updated} updated · ${skipped} skipped`;
+    const artistsCreated = (result.artists_created as number) ?? 0;
+    const artistsMerged = (result.artists_merged as number) ?? 0;
+    const linksCreated = (result.links_created as number) ?? 0;
+
+    const venuePart = venueAction
+      ? `venue ${venueAction}`
+      : venueId
+        ? "venue linked"
+        : "no venue";
+    const eventsPart = `${saved + updated} events`;
+    const artistsPart = `${artistsCreated + artistsMerged} artists`;
+    headline = `${venuePart} · ${eventsPart} · ${artistsPart}`;
+
     const events = (result.events as Array<Record<string, unknown>>) ?? [];
     const firstTitle = events[0]?.title as string | undefined;
-    subline = firstTitle ? `e.g. "${firstTitle}"` : "";
+    const detailBits: string[] = [];
+    if (saved || updated || skipped) {
+      detailBits.push(`${saved} new / ${updated} merged / ${skipped} skipped`);
+    }
+    if (linksCreated) detailBits.push(`${linksCreated} event↔artist links`);
+    if (firstTitle) detailBits.push(`e.g. "${firstTitle}"`);
+    subline = detailBits.join(" · ");
   }
 
   return (
@@ -231,6 +240,36 @@ const cardStyle: CSSProperties = {
   boxSizing: "border-box",
 };
 
+function RescrapingBadge() {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "2px 10px",
+        borderRadius: 999,
+        fontSize: 11,
+        fontWeight: 600,
+        textTransform: "uppercase",
+        letterSpacing: 0.5,
+        background: "#f59e0b22",
+        color: "#f59e0b",
+        border: "1px solid #f59e0b66",
+      }}
+    >
+      <span
+        style={{
+          width: 6, height: 6, borderRadius: "50%",
+          background: "#f59e0b",
+          animation: "scraperPulse 1.2s ease-in-out infinite",
+        }}
+      />
+      Rescraping
+    </span>
+  );
+}
+
 function JobCard({
   job,
   expanded,
@@ -251,21 +290,29 @@ function JobCard({
   const canExpand = job.status === "completed" || job.status === "failed";
   const canRescrape = job.status === "completed" || job.status === "failed";
 
+  const activeCardStyle: CSSProperties = rescraping
+    ? {
+        ...cardStyle,
+        border: "1px solid rgba(245, 158, 11, 0.55)",
+        background: "rgba(245, 158, 11, 0.06)",
+      }
+    : cardStyle;
+
   return (
-    <div style={cardStyle}>
+    <div style={activeCardStyle}>
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
           gap: 12,
-          cursor: canExpand ? "pointer" : "default",
+          cursor: canExpand && !rescraping ? "pointer" : "default",
         }}
-        onClick={() => { if (canExpand) onToggle(); }}
+        onClick={() => { if (canExpand && !rescraping) onToggle(); }}
       >
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-            <StatusBadge status={job.status} />
+            {rescraping ? <RescrapingBadge /> : <StatusBadge status={job.status} />}
             <span className="meta" style={{ fontSize: 11 }}>{job.mode}</span>
             {job.dry_run && <span className="meta" style={{ fontSize: 11 }}>· dry-run</span>}
           </div>
@@ -279,6 +326,32 @@ function JobCard({
             created {formatTime(job.created_at)}
             {job.completed_at && ` · finished ${formatTime(job.completed_at)}`}
           </div>
+          {rescraping && (
+            <div
+              style={{
+                marginTop: 8,
+                padding: "8px 12px",
+                background: "rgba(245, 158, 11, 0.10)",
+                border: "1px solid rgba(245, 158, 11, 0.35)",
+                borderRadius: 8,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span
+                style={{
+                  width: 6, height: 6, borderRadius: "50%",
+                  background: "#f59e0b",
+                  animation: "scraperPulse 1.2s ease-in-out infinite",
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ fontSize: 11, fontWeight: 600, color: "#f59e0b", flexShrink: 0 }}>
+                Scraping in progress — this can take 30–60s
+              </span>
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
           {canRescrape && (
@@ -288,13 +361,13 @@ function JobCard({
               disabled={rescraping}
               onClick={(e) => { e.stopPropagation(); onRescrape(); }}
             >
-              {rescraping ? "..." : "Rescrape"}
+              {rescraping ? "Rescraping…" : "Rescrape"}
             </Button>
           )}
           <Button
             type="button"
             variant="secondary"
-            disabled={deleting || job.status === "in_progress"}
+            disabled={deleting || job.status === "in_progress" || rescraping}
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
             style={{ color: "#e74c3c" }}
           >
@@ -338,7 +411,6 @@ function JobCard({
 
 export default function QueueDashboard() {
   // Form state
-  const [mode, setMode] = useState<ScrapeMode>("events");
   const [urlsText, setUrlsText] = useState("");
   const [venueId, setVenueId] = useState("");
   const [enableRender, setEnableRender] = useState(false);
@@ -370,7 +442,6 @@ export default function QueueDashboard() {
   const [workerJobsProcessed, setWorkerJobsProcessed] = useState(0);
   const [workerMaxJobs, setWorkerMaxJobs] = useState<number | null>(null);
   const [workerCurrentUrl, setWorkerCurrentUrl] = useState<string | null>(null);
-  const [workerCurrentMode, setWorkerCurrentMode] = useState<string | null>(null);
   const [maxJobsInput, setMaxJobsInput] = useState("");
   const [workerActionPending, setWorkerActionPending] = useState(false);
 
@@ -459,13 +530,11 @@ export default function QueueDashboard() {
         jobs_processed: number;
         max_jobs: number | null;
         current_url: string | null;
-        current_mode: string | null;
       };
       setWorkerRunning(data.is_running);
       setWorkerJobsProcessed(data.jobs_processed);
       setWorkerMaxJobs(data.max_jobs);
       setWorkerCurrentUrl(data.current_url ?? null);
-      setWorkerCurrentMode(data.current_mode ?? null);
     } catch {
       // swallow
     }
@@ -537,8 +606,8 @@ export default function QueueDashboard() {
       return;
     }
 
-    const body: Record<string, unknown> = { urls, mode, enable_render: enableRender, dry_run: dryRun };
-    if (mode === "events" && venueId.trim()) body.venue_id = venueId.trim();
+    const body: Record<string, unknown> = { urls, enable_render: enableRender, dry_run: dryRun };
+    if (venueId.trim()) body.venue_id = venueId.trim();
 
     try {
       setSubmitting(true);
@@ -712,15 +781,6 @@ export default function QueueDashboard() {
         </p>
 
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <Button type="button" variant={mode === "venue" ? "primary" : "secondary"} onClick={() => setMode("venue")}>
-              Venue mode
-            </Button>
-            <Button type="button" variant={mode === "events" ? "primary" : "secondary"} onClick={() => setMode("events")}>
-              Events mode
-            </Button>
-          </div>
-
           <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span style={{ fontSize: 13, fontWeight: 500 }}>URLs (one per line)</span>
             <textarea
@@ -739,15 +799,13 @@ export default function QueueDashboard() {
             />
           </label>
 
-          {mode === "events" && (
-            <Input
-              label="Venue ID (optional)"
-              type="text"
-              placeholder="Leave blank to auto-detect"
-              value={venueId}
-              onChange={(e) => setVenueId(e.target.value)}
-            />
-          )}
+          <Input
+            label="Venue ID (optional)"
+            type="text"
+            placeholder="Leave blank to auto-detect from the page"
+            value={venueId}
+            onChange={(e) => setVenueId(e.target.value)}
+          />
 
           <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
             <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
@@ -819,7 +877,7 @@ export default function QueueDashboard() {
                   }}
                 />
                 <span style={{ fontSize: 11, fontWeight: 600, color: "#14b87d", flexShrink: 0 }}>
-                  Scraping {workerCurrentMode}:
+                  Scraping:
                 </span>
                 <span
                   style={{

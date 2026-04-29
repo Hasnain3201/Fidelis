@@ -27,31 +27,28 @@ _IDLE_SLEEP_SECONDS = 2.0
 def _run_job(job: dict) -> dict:
     """Execute a single scrape job synchronously. Returns the result dict to
     persist on the row. Raises on failure (worker catches)."""
+    from app.repositories.artists import ArtistRepository
     from app.repositories.events import EventRepository
     from app.repositories.notifications import NotificationRepository
     from app.repositories.venues import VenueRepository
     from app.services.scraper import AIService, ScraperService
     from app.services.scraper.utils import (
         build_content_preview,
-        map_event_to_supabase,
-        map_venue_to_supabase,
+        compute_fingerprint,
     )
 
     url = job["url"]
-    mode = job["mode"]
     enable_render = bool(job.get("enable_render", False))
     multi_page = bool(job.get("multi_page", True))
     dry_run = bool(job.get("dry_run", False))
     venue_id_hint = job.get("venue_id_hint")
 
     scraper = ScraperService()
-    raw = scraper.extract_venue_data(url, enable_render=enable_render, multi_page=multi_page, mode=mode)
+    raw = scraper.extract_venue_data(url, enable_render=enable_render, multi_page=multi_page)
     if "error" in raw:
         # The scrape ran but the URL is unreachable (404, DNS, timeout, etc.).
         # Mark as completed-but-unreachable rather than failed: the worker did its job.
         return {
-            "mode": mode,
-            "dry_run": dry_run,
             "unreachable": True,
             "reason": raw["error"],
             "content_preview": None,
@@ -60,133 +57,139 @@ def _run_job(job: dict) -> dict:
     content_preview = build_content_preview(raw)
 
     ai = AIService()
+    unified = ai.process_unified_data(raw)
+    if "error" in unified:
+        raise RuntimeError(f"ai_failed: {unified['error']}")
 
-    if mode == "venue":
-        structured = ai.process_venue_data(raw)
-        if "error" in structured:
-            raise RuntimeError(f"ai_failed: {structured['error']}")
+    scraped_at = datetime.now(timezone.utc).isoformat()
+    venue_payload = unified.get("venue")
+    events = unified.get("events") or []
+    artists = unified.get("artists") or []
 
-        structured["scraped_at"] = datetime.now(timezone.utc).isoformat()
-        structured["source_url"] = url
-
-        if not structured.get("description") and content_preview.get("description"):
-            structured["description"] = content_preview["description"]
-
-        if dry_run:
-            payload = map_venue_to_supabase(structured, url)
-            return {
-                "mode": "venue",
-                "dry_run": True,
-                "structured": structured,
-                "payload": payload,
-                "content_preview": content_preview,
-            }
-
-        repo = VenueRepository()
-        save_result = repo.save_venue(structured, url)
-
-        try:
-            NotificationRepository().create(
-                type=f"venue_{save_result['action']}",
-                entity_type="venue",
-                entity_id=save_result["venue_id"],
-                entity_name=structured.get("venue_name") or structured.get("name"),
-                message=f"Venue {save_result['action']} from {url}",
-            )
-        except Exception:
-            logger.warning("Failed to create venue notification", exc_info=True)
-
+    if dry_run:
         return {
-            "mode": "venue",
-            "dry_run": False,
-            "venue_id": save_result["venue_id"],
-            "action": save_result["action"],
-            "structured": structured,
-            "content_preview": content_preview,
-        }
-
-    if mode == "events":
-        ai_result = ai.process_events_data(raw)
-        if "error" in ai_result:
-            raise RuntimeError(f"ai_failed: {ai_result['error']}")
-
-        venue_id = venue_id_hint
-        venue_name: str | None = None
-        venue_repo = VenueRepository()
-
-        ai_venue = ai_result.get("venue")
-        if ai_venue and not venue_id:
-            venue_desc = ai_venue.get("description") or content_preview.get("description") or None
-            mapped_venue = {
-                "venue_name": ai_venue.get("venue_name") or ai_venue.get("name"),
-                "venue_address": ai_venue.get("venue_address") or ai_venue.get("address") or {},
-                "website": ai_venue.get("website") or url,
-                "description": venue_desc,
-                "venue_type": ai_venue.get("venue_type"),
-                "primary_contact": ai_venue.get("primary_contact") or {},
-                "social_links": ai_venue.get("social_links") or {},
-                "phone_number": ai_venue.get("phone_number"),
-                "email": ai_venue.get("email"),
-                "capacity": ai_venue.get("capacity"),
-                "confidence_score": ai_venue.get("confidence_score"),
-                "source_url": url,
-                "scraped_at": datetime.now(timezone.utc).isoformat(),
-            }
-            if dry_run:
-                venue_payload = map_venue_to_supabase(mapped_venue, url)
-            else:
-                v_result = venue_repo.save_venue(mapped_venue, url)
-                venue_id = v_result["venue_id"]
-                venue_name = mapped_venue.get("venue_name")
-        elif venue_id:
-            v = venue_repo.get_venue(venue_id)
-            venue_name = v["name"] if v else None
-
-        events = ai_result.get("events") or []
-
-        if dry_run:
-            event_payloads = [
-                map_event_to_supabase(ev, venue_id, venue_name, url)
-                for ev in events
-                if isinstance(ev, dict)
-            ]
-            return {
-                "mode": "events",
-                "dry_run": True,
-                "venue_id": venue_id,
-                "events": events,
-                "event_payloads": event_payloads,
-                "content_preview": content_preview,
-            }
-
-        event_repo = EventRepository()
-        summary = event_repo.save_events(events, venue_id, venue_name, url)
-
-        try:
-            notif = NotificationRepository()
-            for eid in summary.get("event_ids", []):
-                notif.create(
-                    type="event_created",
-                    entity_type="event",
-                    entity_id=eid,
-                    message=f"Event saved from {url}",
-                )
-        except Exception:
-            logger.warning("Failed to create event notifications", exc_info=True)
-
-        return {
-            "mode": "events",
-            "dry_run": False,
-            "venue_id": venue_id,
-            "saved": summary["saved"],
-            "updated": summary["updated"],
-            "skipped": summary["skipped"],
-            "event_ids": summary["event_ids"],
+            "dry_run": True,
+            "venue": venue_payload,
             "events": events,
+            "artists": artists,
             "content_preview": content_preview,
         }
 
-    raise ValueError(f"Unknown mode '{mode}'")
+    # ------------------------------------------------------------------
+    # 1) Venue: upsert if extracted, otherwise fall back to job hint
+    # ------------------------------------------------------------------
+    venue_id: str | None = venue_id_hint
+    venue_name: str | None = None
+    venue_action: str | None = None
+    venue_repo = VenueRepository()
+
+    if venue_payload:
+        venue_data = dict(venue_payload)
+        if not venue_data.get("description") and content_preview.get("description"):
+            venue_data["description"] = content_preview["description"]
+        venue_data["source_url"] = url
+        venue_data["scraped_at"] = scraped_at
+        v_result = venue_repo.save_venue(venue_data, url)
+        venue_id = v_result["venue_id"]
+        venue_action = v_result["action"]
+        venue_name = venue_data.get("venue_name") or venue_data.get("name")
+    elif venue_id:
+        v = venue_repo.get_venue(venue_id)
+        venue_name = v["name"] if v else None
+
+    # ------------------------------------------------------------------
+    # 2) Events: bulk dedup + smart merge
+    # ------------------------------------------------------------------
+    event_repo = EventRepository()
+    event_summary = event_repo.save_events(events, venue_id, venue_name, url)
+
+    # ------------------------------------------------------------------
+    # 3) Artists: upsert each, building stage_name -> artist_id map
+    # ------------------------------------------------------------------
+    artist_repo = ArtistRepository()
+    artist_lookup: dict[str, str] = {}
+    artists_created = 0
+    artists_merged = 0
+    for a in artists:
+        if not isinstance(a, dict):
+            continue
+        result = artist_repo.upsert_artist(a)
+        if not result:
+            continue
+        stage_name = (a.get("stage_name") or "").strip().lower()
+        if stage_name:
+            artist_lookup[stage_name] = result["artist_id"]
+        if result["action"] == "created":
+            artists_created += 1
+        elif result["action"] == "merged":
+            artists_merged += 1
+
+    # ------------------------------------------------------------------
+    # 4) Linking: for each saved event, link known artists via event_artists
+    # ------------------------------------------------------------------
+    links_created = 0
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+        artist_names = ev.get("artists") or []
+        if not artist_names:
+            continue
+        title = ev.get("title") or ev.get("name") or "Untitled"
+        start = ev.get("start_datetime") or ev.get("start_time") or ev.get("start") or ""
+        ev_venue = ev.get("venue_name") or venue_name or ""
+        fp = compute_fingerprint(title, start, ev_venue)
+        saved_row = event_repo._find_by_fingerprint(fp)
+        if not saved_row:
+            continue
+        event_id = saved_row["id"]
+        for name in artist_names:
+            if not isinstance(name, str):
+                continue
+            artist_id = artist_lookup.get(name.strip().lower())
+            if not artist_id:
+                continue
+            if artist_repo.link_event_artist(event_id, artist_id):
+                links_created += 1
+
+    # ------------------------------------------------------------------
+    # 5) Notifications (best-effort)
+    # ------------------------------------------------------------------
+    try:
+        notif = NotificationRepository()
+        if venue_id and venue_action:
+            notif.create(
+                type=f"venue_{venue_action}",
+                entity_type="venue",
+                entity_id=venue_id,
+                entity_name=venue_name,
+                message=f"Venue {venue_action} from {url}",
+            )
+        for eid in event_summary.get("event_ids", []):
+            notif.create(
+                type="event_created",
+                entity_type="event",
+                entity_id=eid,
+                message=f"Event saved from {url}",
+            )
+    except Exception:
+        logger.warning("Failed to create scrape notifications", exc_info=True)
+
+    return {
+        "dry_run": False,
+        "venue_id": venue_id,
+        "venue_action": venue_action,
+        "saved": event_summary["saved"],
+        "updated": event_summary["updated"],
+        "skipped": event_summary["skipped"],
+        "event_ids": event_summary["event_ids"],
+        "artists_created": artists_created,
+        "artists_merged": artists_merged,
+        "artist_ids": list(artist_lookup.values()),
+        "links_created": links_created,
+        "events": events,
+        "artists": artists,
+        "content_preview": content_preview,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +206,6 @@ class ScrapeWorker:
         self._max_jobs: Optional[int] = None
         self._jobs_processed: int = 0
         self._current_url: Optional[str] = None
-        self._current_mode: Optional[str] = None
 
     @property
     def is_running(self) -> bool:
@@ -220,10 +222,6 @@ class ScrapeWorker:
     @property
     def current_url(self) -> Optional[str]:
         return self._current_url
-
-    @property
-    def current_mode(self) -> Optional[str]:
-        return self._current_mode
 
     async def start(self, max_jobs: Optional[int] = None) -> bool:
         if self._task and not self._task.done():
@@ -272,9 +270,8 @@ class ScrapeWorker:
                 continue
 
             job_id = job["id"]
-            logger.info("Scrape worker picked up job %s (%s %s)", job_id, job["mode"], job["url"])
+            logger.info("Scrape worker picked up job %s (%s)", job_id, job["url"])
             self._current_url = job.get("url")
-            self._current_mode = job.get("mode")
 
             job_processed = False
             try:
@@ -296,7 +293,6 @@ class ScrapeWorker:
             finally:
                 job_processed = True
                 self._current_url = None
-                self._current_mode = None
 
             if job_processed:
                 self._jobs_processed += 1

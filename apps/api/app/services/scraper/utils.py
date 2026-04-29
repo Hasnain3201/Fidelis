@@ -2,6 +2,7 @@
 
 import hashlib
 import re
+from datetime import datetime
 from typing import Any
 
 
@@ -121,6 +122,21 @@ def map_venue_to_supabase(venue_data: dict, source_url: str | None = None) -> di
     }
 
 
+def map_artist_to_supabase(artist_data: dict) -> dict:
+    """Map AI-extracted artist data to Supabase ``artists`` columns.
+
+    Dedup is handled at the repository layer via case-insensitive lookup —
+    the worker is single-threaded, so no unique-index race exists.
+    """
+    stage_name = artist_data.get("stage_name") or artist_data.get("name") or ""
+    if isinstance(stage_name, str):
+        stage_name = stage_name.strip()
+    return {
+        "stage_name": stage_name,
+        "genre": artist_data.get("genre") or None,
+    }
+
+
 _TYPE_MAP = {"Music": "Live Music", "Party": "Specialty Entertainment"}
 
 
@@ -134,6 +150,19 @@ def map_event_to_supabase(
     title = event_data.get("title") or event_data.get("name") or "Untitled"
     start = event_data.get("start_datetime") or event_data.get("start_time") or event_data.get("start")
     end = event_data.get("end_datetime") or event_data.get("end_time") or event_data.get("end")
+
+    # Guard against AI date-rollover bugs: when an event runs past midnight
+    # ("9pm – 12:30am"), the model often keeps the start's date for the end too,
+    # producing end <= start. Postgres' events_time_window CHECK rejects this,
+    # so drop the bad end_time rather than crash. The schema permits NULL end_time.
+    if start and end:
+        try:
+            start_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+            end_dt = datetime.fromisoformat(end.replace("Z", "+00:00"))
+            if end_dt <= start_dt:
+                end = None
+        except (ValueError, AttributeError):
+            pass
 
     types_raw = _coerce_list(event_data.get("types"))
     types = [_TYPE_MAP.get(t.strip(), t.strip()) for t in types_raw if isinstance(t, str)]

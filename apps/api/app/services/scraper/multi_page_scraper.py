@@ -37,19 +37,22 @@ FETCH_TIMEOUT = 12          # GET per secondary page
 MAX_TEXT_PER_PAGE = 8_000   # chars kept per secondary page before concat
 MAX_COMBINED_CHARS = 24_000 # total combined text cap (~6k tokens — fits free-tier AI quotas)
 
-_VENUE_KEYWORD_SCORES: dict[str, int] = {
+# Unified keyword scores (venue + events + artists). Top-scoring sub-pages naturally
+# pick the most informative pages on each site (about + events + lineup, etc.).
+_KEYWORD_SCORES: dict[str, int] = {
+    # venue
     "about": 10, "about-us": 10, "contact": 10, "contact-us": 10,
     "hours": 8, "location": 7, "directions": 5, "info": 6,
     "information": 6, "faq": 4, "team": 3, "staff": 3,
     "history": 3, "story": 3, "menu": 5, "amenities": 4,
-}
-
-_EVENTS_KEYWORD_SCORES: dict[str, int] = {
+    # events
     "events": 10, "calendar": 10, "schedule": 10, "shows": 10,
     "whats-on": 10, "whatson": 10, "gigs": 9, "concerts": 9,
     "live": 7, "music": 6, "entertainment": 5, "listings": 8,
     "upcoming": 7, "programme": 7, "program": 6, "tickets": 6,
     "performances": 8, "lineup": 7,
+    # artists
+    "artists": 9, "roster": 8, "performers": 8, "acts": 6,
 }
 
 _NEGATIVE_SUBSTRINGS: frozenset[str] = frozenset({
@@ -61,17 +64,18 @@ _NEGATIVE_SUBSTRINGS: frozenset[str] = frozenset({
     ".css", ".js", ".xml", "mailto:", "tel:", "#",
 })
 
-_VENUE_PATHS: list[tuple[str, int]] = [
+_PATHS: list[tuple[str, int]] = [
+    # venue
     ("/about", 10), ("/about-us", 10), ("/contact", 10), ("/contact-us", 10),
     ("/hours", 8), ("/location", 7), ("/info", 6), ("/faq", 4),
     ("/menu", 5), ("/amenities", 4), ("/directions", 5),
-]
-
-_EVENTS_PATHS: list[tuple[str, int]] = [
+    # events
     ("/events", 10), ("/calendar", 10), ("/schedule", 10), ("/shows", 10),
     ("/whats-on", 10), ("/whatson", 9), ("/gigs", 9), ("/concerts", 9),
     ("/live", 7), ("/upcoming", 7), ("/entertainment", 5),
     ("/performances", 8), ("/lineup", 7), ("/tickets", 6),
+    # artists
+    ("/artists", 9), ("/roster", 8), ("/performers", 8),
 ]
 
 _UTM_RE = re.compile(r"utm_[^&=]+=[^&]*&?", re.IGNORECASE)
@@ -98,7 +102,6 @@ class MultiPageScraper:
         self,
         base_url: str,
         soup: BeautifulSoup,
-        mode: str,
     ) -> list[str]:
         """Return up to MAX_PAGES-1 additional URLs to fetch, ranked by score."""
         candidates: dict[str, int] = {}  # normalized_url -> best score
@@ -114,13 +117,13 @@ class MultiPageScraper:
                 else:
                     candidates[norm] = score
 
-        _merge(self._extract_links_from_soup(base_url, soup, mode))
-        _merge(self._heuristic_paths(base_url, mode))
-        _merge(self._sitemap_urls(base_url, mode))
+        _merge(self._extract_links_from_soup(base_url, soup))
+        _merge(self._heuristic_paths(base_url))
+        _merge(self._sitemap_urls(base_url))
 
         ranked = sorted(candidates.items(), key=lambda kv: kv[1], reverse=True)
         top = [url for url, _ in ranked[: MAX_PAGES - 1]]
-        _dprint(f"[MultiPage] discover_pages({mode}) for {base_url}: {len(candidates)} total candidates, top {len(top)} selected")
+        _dprint(f"[MultiPage] discover_pages for {base_url}: {len(candidates)} total candidates, top {len(top)} selected")
         for url, score in ranked[: MAX_PAGES - 1]:
             _dprint(f"[MultiPage]   -> score={score} {url}")
         return top
@@ -160,10 +163,12 @@ class MultiPageScraper:
     def combine_pages(
         primary_raw: dict,
         additional_pages: list[dict],
-        mode: str,
     ) -> str:
-        """Concatenate primary + secondary page text with section headers."""
-        from .prompts.event_prompts import EventPrompts
+        """Concatenate primary + secondary page text with section headers.
+
+        Secondary pages are keyword-compacted to keep prompt tokens manageable.
+        """
+        from .prompts.unified_prompts import UnifiedPrompts
 
         parts: list[str] = []
         primary_text = primary_raw.get("text_content", "")
@@ -171,15 +176,14 @@ class MultiPageScraper:
 
         for page in additional_pages:
             page_text = page.get("text_content", "")[:MAX_TEXT_PER_PAGE]
-            if mode == "events":
-                page_text = EventPrompts.create_compact_text(page_text)
+            page_text = UnifiedPrompts.create_compact_text(page_text)
             header = f"--- PAGE: {page.get('url', '')} ---"
             parts.append(f"{header}\n\n{page_text}")
 
         combined = "\n\n".join(parts)
         if len(combined) > MAX_COMBINED_CHARS:
             combined = combined[:MAX_COMBINED_CHARS]
-        _dprint(f"[MultiPage] combine_pages({mode}): combined {1 + len(additional_pages)} pages into {len(combined)} chars")
+        _dprint(f"[MultiPage] combine_pages: combined {1 + len(additional_pages)} pages into {len(combined)} chars")
         return combined
 
     @staticmethod
@@ -226,7 +230,6 @@ class MultiPageScraper:
         self,
         base_url: str,
         soup: BeautifulSoup,
-        mode: str,
     ) -> list[tuple[str, int]]:
         base_netloc = urlparse(base_url).netloc.lower()
         results: list[tuple[str, int]] = []
@@ -239,7 +242,7 @@ class MultiPageScraper:
             parsed = urlparse(abs_url)
             if parsed.netloc.lower() != base_netloc:
                 continue
-            score = self._score_link(abs_url, mode)
+            score = self._score_link(abs_url)
             if score > 0:
                 results.append((abs_url, score))
 
@@ -252,14 +255,12 @@ class MultiPageScraper:
     def _heuristic_paths(
         self,
         base_url: str,
-        mode: str,
     ) -> list[tuple[str, int]]:
         parsed = urlparse(base_url)
         base = f"{parsed.scheme}://{parsed.netloc}"
-        paths = _EVENTS_PATHS if mode == "events" else _VENUE_PATHS
         results: list[tuple[str, int]] = []
 
-        for path, score in paths:
+        for path, score in _PATHS:
             candidate = base + path
             try:
                 resp = requests.head(
@@ -283,7 +284,6 @@ class MultiPageScraper:
     def _sitemap_urls(
         self,
         base_url: str,
-        mode: str,
     ) -> list[tuple[str, int]]:
         parsed = urlparse(base_url)
         base = f"{parsed.scheme}://{parsed.netloc}"
@@ -303,7 +303,7 @@ class MultiPageScraper:
                     loc_url = (loc.get_text() or "").strip()
                     if not loc_url:
                         continue
-                    score = self._score_link(loc_url, mode)
+                    score = self._score_link(loc_url)
                     if score > 0:
                         results.append((loc_url, score))
                 if results:
@@ -317,19 +317,18 @@ class MultiPageScraper:
     # Scoring and normalization
     # ------------------------------------------------------------------
 
-    def _score_link(self, href: str, mode: str) -> int:
+    def _score_link(self, href: str) -> int:
         lower = href.lower()
         for neg in _NEGATIVE_SUBSTRINGS:
             if neg in lower:
                 return -1
 
-        keyword_scores = _EVENTS_KEYWORD_SCORES if mode == "events" else _VENUE_KEYWORD_SCORES
         path = urlparse(href).path.lower()
         segments = re.split(r"[/\-_]", path)
         total = 0
         for seg in segments:
-            if seg in keyword_scores:
-                total += keyword_scores[seg]
+            if seg in _KEYWORD_SCORES:
+                total += _KEYWORD_SCORES[seg]
 
         return total
 

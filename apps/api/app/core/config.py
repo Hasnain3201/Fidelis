@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     scraper_ai_provider: str = "gemini"
     google_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash-lite"
+    # Comma-separated list of fallback model IDs to try (in order) when the
+    # primary `gemini_model` returns a quota / rate-limit (429) error.
+    # Override via env var GEMINI_MODEL_FALLBACKS. Leave empty to disable.
+    gemini_model_fallbacks: str = "gemini-2.5-flash-lite,gemini-2.5-flash"
     groq_api_key: str = ""
     groq_model: str = "llama-3.1-8b-instant"
 

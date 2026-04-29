@@ -30,6 +30,26 @@ def get_gemini_model() -> str:
     return settings.gemini_model
 
 
+def get_gemini_model_chain() -> list[str]:
+    """Return the ordered list of Gemini model IDs to try.
+
+    Always starts with the primary `gemini_model`, followed by each fallback
+    in `gemini_model_fallbacks` (de-duplicated). Empty / blank entries are
+    dropped.
+    """
+    primary = (settings.gemini_model or "").strip()
+    raw_fallbacks = (settings.gemini_model_fallbacks or "").split(",")
+    chain: list[str] = []
+    seen: set[str] = set()
+    for name in [primary, *raw_fallbacks]:
+        n = name.strip()
+        if not n or n in seen:
+            continue
+        seen.add(n)
+        chain.append(n)
+    return chain
+
+
 def get_ai_provider() -> str:
     return (settings.scraper_ai_provider or "gemini").strip().lower()
 

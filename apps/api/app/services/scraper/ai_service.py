@@ -1,6 +1,7 @@
 """AI service for extracting structured venue/event data."""
 
 import json
+import logging
 import re
 
 import google.generativeai as genai
@@ -8,14 +9,15 @@ from groq import Groq
 
 from .config import (
     get_ai_provider,
-    get_gemini_model,
+    get_gemini_model_chain,
     get_google_api_key,
     get_groq_api_key,
     get_groq_model,
 )
-from .prompts.event_prompts import EventPrompts
-from .prompts.venue_prompts import VenuePrompts
-from .schemas import EventsExtraction, VenueExtraction
+from .prompts.unified_prompts import UnifiedPrompts
+from .schemas import UnifiedExtraction
+
+logger = logging.getLogger(__name__)
 
 _configured = False
 
@@ -27,17 +29,31 @@ def _ensure_configured() -> None:
         _configured = True
 
 
+# Substrings of the str(exc) we treat as "this model is rate-limited / out of
+# quota — try the next one." Includes both google.api_core's ResourceExhausted
+# format and the bare 429 wording from the REST surface.
+_QUOTA_MARKERS = ("429", "ResourceExhausted", "quota", "rate limit", "RATE_LIMIT")
+
+
+def _is_quota_error(exc: BaseException) -> bool:
+    msg = str(exc)
+    return any(m.lower() in msg.lower() for m in _QUOTA_MARKERS)
+
+
 class AIService:
     """Process raw scraped HTML through AI provider to get structured data."""
 
     def __init__(self) -> None:
         self.provider = get_ai_provider()
-        self.model = None
+        self.gemini_models: list[tuple[str, "genai.GenerativeModel"]] = []
         self.client = None
 
         if self.provider == "gemini":
             _ensure_configured()
-            self.model = genai.GenerativeModel(get_gemini_model())
+            chain = get_gemini_model_chain()
+            if not chain:
+                raise ValueError("No Gemini model configured (gemini_model is empty)")
+            self.gemini_models = [(name, genai.GenerativeModel(name)) for name in chain]
         elif self.provider == "groq":
             api_key = get_groq_api_key().strip()
             if not api_key:
@@ -48,12 +64,15 @@ class AIService:
                 f"Unsupported SCRAPER_AI_PROVIDER '{self.provider}'. Use 'gemini' or 'groq'.",
             )
 
-    def process_venue_data(self, raw_data: dict) -> dict:
+    def process_unified_data(self, raw_data: dict) -> dict:
+        """Single-call extraction for venue + events + artists."""
         try:
             url = raw_data.get("url", "")
-            prompt = VenuePrompts.get_venue_extraction_prompt(
+            text_content = raw_data.get("text_content", "")
+            compact_text = UnifiedPrompts.create_compact_text(text_content)
+            prompt = UnifiedPrompts.get_unified_extraction_prompt(
                 url=url,
-                text_content=raw_data.get("text_content", ""),
+                text_content=compact_text,
                 structured_data=raw_data.get("structured_data", []),
                 meta_data=raw_data.get("meta_data", {}),
                 phones=raw_data.get("phones", []),
@@ -63,24 +82,7 @@ class AIService:
             parsed = self._parse_json(result)
             if "error" in parsed:
                 return parsed
-            return VenueExtraction.from_ai_dict(parsed).to_mapper_dict()
-        except Exception as e:
-            return {"error": f"AI processing error: {e}"}
-
-    def process_events_data(self, raw_data: dict) -> dict:
-        try:
-            url = raw_data.get("url", "")
-            compact_text = EventPrompts.create_compact_text(raw_data.get("text_content", ""))
-            prompt = EventPrompts.get_event_extraction_prompt(
-                url=url,
-                compact_text=compact_text,
-                structured_data=raw_data.get("structured_data", []),
-            )
-            result = self._generate(prompt, url)
-            parsed = self._parse_json(result)
-            if "error" in parsed:
-                return parsed
-            return EventsExtraction.from_ai_dict(parsed).to_mapper_dict()
+            return UnifiedExtraction.from_ai_dict(parsed).to_mapper_dict()
         except Exception as e:
             return {"error": f"AI processing error: {e}"}
 
@@ -88,12 +90,33 @@ class AIService:
 
     def _generate(self, prompt: str, url: str) -> str:
         if self.provider == "gemini":
-            try:
-                resp = self.model.generate_content([prompt, url])
-                return resp.text.strip()
-            except Exception:
-                resp = self.model.generate_content(prompt)
-                return resp.text.strip()
+            last_exc: Exception | None = None
+            for idx, (name, model) in enumerate(self.gemini_models):
+                try:
+                    try:
+                        resp = model.generate_content([prompt, url])
+                    except Exception:
+                        # Some models reject list-form input; retry single-string.
+                        resp = model.generate_content(prompt)
+                    if idx > 0:
+                        logger.info("Gemini fallback succeeded with model '%s'", name)
+                    return resp.text.strip()
+                except Exception as exc:
+                    last_exc = exc
+                    if _is_quota_error(exc) and idx < len(self.gemini_models) - 1:
+                        next_name = self.gemini_models[idx + 1][0]
+                        logger.warning(
+                            "Gemini model '%s' quota exhausted; falling back to '%s'",
+                            name, next_name,
+                        )
+                        continue
+                    # Non-quota failure on a single model: don't burn the rest of
+                    # the chain on the same call — surface the error.
+                    raise
+            # All models exhausted with quota errors.
+            raise RuntimeError(
+                f"All Gemini models exhausted: {[n for n, _ in self.gemini_models]}"
+            ) from last_exc
 
         if self.provider == "groq":
             request_text = f"{prompt}\n\nSource URL: {url}"
