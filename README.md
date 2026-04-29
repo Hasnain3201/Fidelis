@@ -1,6 +1,6 @@
 # Fidelis (LIVEY)
 
-LIVEY project Repo
+Full-stack event discovery platform (Next.js, FastAPI, Supabase) enabling real-time search, event publishing, and user engagement for local entertainment.
 
 ## Stack
 
