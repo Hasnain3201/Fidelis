@@ -38,14 +38,18 @@ const EVENT_TYPE_OPTIONS = [
 ];
 const DATE_WINDOWS = ["any", "weekend", "next7", "next30"] as const;
 const SORT_OPTIONS = ["recommended", "dateSoonest", "dateLatest"] as const;
+const RADIUS_OPTIONS = [5, 10, 25, 50, 100] as const;
+const DEFAULT_RADIUS_MILES = 10;
 
 const PAGE_SIZE = 12;
 
 type DateWindow = (typeof DATE_WINDOWS)[number];
+type RadiusMiles = (typeof RADIUS_OPTIONS)[number];
 
 type SearchSnapshot = {
   query: string;
   zipCode: string;
+  radiusMiles: RadiusMiles;
   venueQuery: string;
   activeCategory: string;
   dateWindow: DateWindow;
@@ -53,6 +57,12 @@ type SearchSnapshot = {
   selectedTypes: string[];
   page: number;
 };
+
+function parseRadius(value: string | null): RadiusMiles {
+  const num = Number(value);
+  if (RADIUS_OPTIONS.includes(num as RadiusMiles)) return num as RadiusMiles;
+  return DEFAULT_RADIUS_MILES;
+}
 
 function toTitleCase(value: string): string {
   return value
@@ -82,6 +92,7 @@ function formatTimeLabel(value: string): string {
 
 function mapSummaryToCardItem(item: EventSummary, index: number): EventCardItem {
   const categoryLabel = toTitleCase(item.category);
+  const zip = item.zip_code ?? "";
   return {
     id: item.id,
     title: item.title,
@@ -89,8 +100,8 @@ function mapSummaryToCardItem(item: EventSummary, index: number): EventCardItem 
     description: `Hosted by ${item.venue_name}. Open event details to view the full lineup and schedule.`,
     dateLabel: formatDateLabel(item.start_time),
     timeLabel: formatTimeLabel(item.start_time),
-    zipCode: item.zip_code,
-    location: item.zip_code,
+    zipCode: zip,
+    location: zip,
     venue: item.venue_name,
     price: "TBD",
     image: getCoverImage(item.cover_image_url, "event"),
@@ -223,6 +234,7 @@ export function SearchResultsClient() {
 
   const [query, setQuery] = useState("");
   const [zipCode, setZipCode] = useState("");
+  const [radiusMiles, setRadiusMiles] = useState<RadiusMiles>(DEFAULT_RADIUS_MILES);
   const [zipError, setZipError] = useState("");
   const [venueQuery, setVenueQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
@@ -265,6 +277,7 @@ export function SearchResultsClient() {
     const snapshot: SearchSnapshot = {
       query: (nextParams.get("query") ?? "").trim().slice(0, 120),
       zipCode: normalizeZipInput(nextParams.get("zip") ?? nextParams.get("location") ?? ""),
+      radiusMiles: parseRadius(nextParams.get("radius")),
       venueQuery: (nextParams.get("venue") ?? "").slice(0, 100),
       activeCategory: "All",
       dateWindow: parseDateWindow(nextParams.get("date")),
@@ -289,6 +302,7 @@ export function SearchResultsClient() {
 
     setQuery(snapshot.query);
     setZipCode(snapshot.zipCode);
+    setRadiusMiles(snapshot.radiusMiles);
     setVenueQuery(snapshot.venueQuery);
     setActiveCategory(snapshot.activeCategory);
     setDateWindow(snapshot.dateWindow);
@@ -325,6 +339,7 @@ export function SearchResultsClient() {
 
     void searchEventsWithFilters({
       zip: toZip5(snapshot.zipCode),
+      radiusMiles: snapshot.radiusMiles,
       query: snapshot.query || undefined,
       venue: snapshot.venueQuery || undefined,
       categories: categories.length ? categories : undefined,
@@ -603,7 +618,7 @@ export function SearchResultsClient() {
             <h1>Search Results</h1>
             <p>
               {isFiltering ? "Updating results..." : `${totalResults} events found`}
-              {zipCode.trim() ? ` • near ${zipCode.trim()}` : ""}
+              {zipCode.trim() ? ` • within ${radiusMiles} mi of ${zipCode.trim()}` : ""}
               {summaryParts.length ? ` • matching ${summaryParts.join(" • ")}` : ""}
               {activeFilterCount > 0
                 ? ` • ${activeFilterCount} filter${activeFilterCount === 1 ? "" : "s"} active`
@@ -651,6 +666,26 @@ export function SearchResultsClient() {
             maxLength={10}
             aria-invalid={Boolean(zipError)}
           />
+          <select
+            className="uiSelect"
+            value={radiusMiles}
+            disabled={disableInputs}
+            aria-label="Search radius"
+            onChange={(event) => {
+              const value = parseRadius(event.target.value);
+              setRadiusMiles(value);
+              setParams({
+                radius: value === DEFAULT_RADIUS_MILES ? null : String(value),
+                page: null,
+              });
+            }}
+          >
+            {RADIUS_OPTIONS.map((miles) => (
+              <option key={miles} value={miles}>
+                Within {miles} mi
+              </option>
+            ))}
+          </select>
         </div>
 
         {zipError ? (

@@ -471,21 +471,12 @@ class DiscoveryService:
         venue_urls = _collect_venue_urls(tm_result, fsq_result, osm_result, tm_save)
         logger.info("Discovery: %d unique venue URLs collected", len(venue_urls))
 
-        # 5. Enqueue each URL as both venue and events scrape jobs
+        # 5. Enqueue each URL as a unified scrape job (venue + events + artists)
         batch_id: str | None = None
         if venue_urls:
             queue = QueueService()
-            venue_batch = queue.enqueue_batch(
-                venue_urls,
-                mode="venue",
-                priority=1,
-            )
-            queue.enqueue_batch(
-                venue_urls,
-                mode="events",
-                priority=1,
-            )
-            batch_id = venue_batch["batch_id"]
+            batch = queue.enqueue_batch(venue_urls, priority=1)
+            batch_id = batch["batch_id"]
 
         # Build Foursquare debug summary (names + websites, skip giant raw blob)
         fsq_venue_previews = [

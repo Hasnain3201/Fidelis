@@ -9,7 +9,7 @@ import type { VenueSummary } from "@/lib/api";
 
 import { getCoverImage } from "@/lib/cover-images";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://fidelisappsapi-production.up.railway.app";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const RECOMMENDED_PAGE_SIZE = 5;
 const SEARCH_PAGE_SIZE = 6;

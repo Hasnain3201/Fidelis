@@ -25,7 +25,7 @@ class VenueProfileRead(BaseModel):
     address_line: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
-    zip_code: str
+    zip_code: Optional[str] = None
     verified: bool = False
     cover_image_url: Optional[str] = None
     created_at: Optional[datetime] = None

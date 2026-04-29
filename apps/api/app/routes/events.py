@@ -7,6 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.core.auth import require_user_id
 from app.db.supabase import get_supabase_client
 from app.models.event_schemas import EventDetail, EventSearchResponse, EventSummary, TrendingContentItem
+from app.services.zip_index import find_nearby_zips
+
+DEFAULT_RADIUS_MILES = 10
+MAX_RADIUS_MILES = 100
 
 router = APIRouter()
 
@@ -152,9 +156,12 @@ def build_event_query(
     venue: Optional[str] = None,
     include_count: bool = False,
     is_promoted: Optional[bool] = None,
+    radius_miles: Optional[float] = None,
 ):
+    venues_join = "venues!inner" if zip_code else "venues"
     select_clause = (
-        "id,title,start_time,category,zip_code,is_promoted,cover_image_url,venues(name, city, state)"
+        f"id,title,start_time,category,zip_code,is_promoted,cover_image_url,"
+        f"{venues_join}(name, city, state, zip_code)"
     )
 
     table = client.table("events")
@@ -166,7 +173,10 @@ def build_event_query(
     q = q.order("start_time")
 
     if zip_code:
-        q = q.eq("zip_code", zip_code)
+        radius = radius_miles if radius_miles and radius_miles > 0 else DEFAULT_RADIUS_MILES
+        radius = min(radius, MAX_RADIUS_MILES)
+        nearby_zips = find_nearby_zips(zip_code, radius)
+        q = q.in_("venues.zip_code", nearby_zips)
 
     if city:
         q = q.filter("venues.city", "ilike", f"%{city}%")
@@ -245,6 +255,7 @@ def list_events(
 def search_events(
     query: Optional[str] = Query(default=None),
     zip_code: Optional[str] = Query(default=None, pattern=r"^\d{5}$"),
+    radius_miles: Optional[float] = Query(default=None, ge=0, le=MAX_RADIUS_MILES),
     city: Optional[str] = Query(default=None),
     state: Optional[str] = Query(default=None),
     start_after: Optional[datetime] = Query(default=None),
@@ -285,6 +296,7 @@ def search_events(
             venue=venue,
             include_count=True,
             is_promoted=is_promoted,
+            radius_miles=radius_miles,
         )
 
         try:
@@ -323,6 +335,7 @@ def search_events(
             venue=venue,
             include_count=True,
             is_promoted=is_promoted,
+            radius_miles=radius_miles,
         ).range(offset, offset + limit - 1)
 
         try:
@@ -343,7 +356,7 @@ def search_events(
             venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
             start_time=row["start_time"],
             category=row["category"],
-            zip_code=row["zip_code"],
+            zip_code=row.get("zip_code") or (row.get("venues") or {}).get("zip_code"),
             is_promoted=bool(row.get("is_promoted", False)),
             cover_image_url=row.get("cover_image_url"),
         )
@@ -591,7 +604,7 @@ def get_event(event_id: str):
     return EventDetail(
         id=row["id"],
         title=row["title"],
-        description=row.get("description", ""),
+        description=row.get("description") or "",
         venue_name=(row.get("venues") or {}).get("name", "Unknown Venue"),
         start_time=row["start_time"],
         end_time=row.get("end_time") or row["start_time"],

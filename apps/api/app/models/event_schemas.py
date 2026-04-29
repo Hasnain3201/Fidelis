@@ -13,7 +13,7 @@ class EventSummary(BaseModel):
     venue_name: str
     start_time: datetime
     category: str
-    zip_code: str = Field(pattern=r"^\d{5}$")
+    zip_code: Optional[str] = Field(default=None, pattern=r"^\d{5}$")
     is_promoted: bool = False
     cover_image_url: Optional[str] = None
 
@@ -26,7 +26,7 @@ class EventDetail(BaseModel):
     category: str
     start_time: datetime
     end_time: datetime
-    zip_code: str = Field(pattern=r"^\d{5}$")
+    zip_code: Optional[str] = Field(default=None, pattern=r"^\d{5}$")
     ticket_url: Optional[str] = None
     cover_image_url: Optional[str] = None
     price: Optional[float] = None
@@ -40,7 +40,7 @@ class EventCreate(BaseModel):
     category: str = Field(min_length=2, max_length=80)
     start_time: datetime
     end_time: datetime
-    zip_code: str = Field(pattern=r"^\d{5}$")
+    zip_code: Optional[str] = Field(default=None, pattern=r"^\d{5}$")
     ticket_url: Optional[str] = None
     cover_image_url: Optional[str] = None
     price: Optional[float] = Field(default=None, ge=0)

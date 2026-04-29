@@ -7,7 +7,7 @@ export type EventSummary = {
   venue_name: string;
   start_time: string;
   category: string;
-  zip_code: string;
+  zip_code: string | null;
   is_promoted: boolean;
   cover_image_url?: string | null;
 };
@@ -23,6 +23,7 @@ export type EventSearchSort = "recommended" | "dateSoonest" | "dateLatest";
 
 export type EventSearchParams = {
   zip?: string;
+  radiusMiles?: number;
   categories?: string[];
   query?: string;
   venue?: string;
@@ -253,7 +254,7 @@ export type CreateMyVenuePayload = {
   cover_image_url?: string | null;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "https://fidelisappsapi-production.up.railway.app";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const REQUEST_TIMEOUT_MS = 10000;
 
 async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -359,6 +360,10 @@ export async function searchEventsWithFilters(params: EventSearchParams): Promis
   const zip = params.zip?.trim();
   if (zip) {
     url.searchParams.set("zip_code", zip);
+  }
+
+  if (typeof params.radiusMiles === "number" && params.radiusMiles > 0) {
+    url.searchParams.set("radius_miles", String(params.radiusMiles));
   }
 
   if (params.query?.trim()) url.searchParams.set("query", params.query.trim());
