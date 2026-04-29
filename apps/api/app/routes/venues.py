@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional
-
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -397,6 +396,7 @@ def create_venue(
     claim_link_created = False
     try:
         admin.table("venue_claims").insert({
+            "id": str(uuid4()),
             "venue_id": venue_id,
             "user_id": auth.user_id,
             "status": "approved",
@@ -408,6 +408,7 @@ def create_venue(
         try:
             user_client = get_supabase_client_for_user(auth.access_token)
             user_client.table("venue_claims").insert({
+                "id": str(uuid4()),
                 "venue_id": venue_id,
                 "user_id": auth.user_id,
                 "status": "pending",

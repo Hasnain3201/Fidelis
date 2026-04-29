@@ -1,5 +1,6 @@
 """Happy-path profile / favorites / follows / venue / artist CRUD with mocked Supabase."""
 
+from uuid import UUID
 from unittest.mock import MagicMock, patch
 
 
@@ -298,6 +299,56 @@ def test_create_venue_claim_fallback_non_fatal(mock_admin, mock_user_sb, mock_ma
     assert resp.json()["id"] == "v-new-2"
 
 
+@patch("app.routes.venues.get_managed_venue_ids", side_effect=[[], []])
+@patch("app.routes.venues.get_supabase_admin_client")
+def test_create_venue_links_with_claim_when_owner_id_is_missing(mock_admin, mock_managed_ids, venue_client):
+    created_row = {
+        "id": "v-claim-link", "name": "Claim Link Venue", "description": None,
+        "address_line": None, "city": None, "state": None,
+        "zip_code": "10001", "verified": False,
+        "cover_image_url": None,
+        "created_at": "2026-03-01T00:00:00+00:00",
+        "updated_at": "2026-03-01T00:00:00+00:00",
+    }
+
+    profiles_chain = _chain_mock([{"id": "test-user-id"}])
+    venues_chain = _chain_mock([created_row])
+    venues_chain.execute.side_effect = [
+        Exception('column "owner_id" does not exist'),  # owner insert path fails
+        _mock_supabase_response([created_row]),         # fallback insert without owner_id
+        Exception("owner link check failed"),           # owner link query
+        _mock_supabase_response(created_row),           # claim-linked reload
+    ]
+    claims_chain = _chain_mock([{"id": "claim-v-link"}])
+    captured_claims = []
+
+    def _capture_claim(payload):
+        UUID(payload["id"])
+        captured_claims.append(payload)
+        return claims_chain
+
+    claims_chain.insert.side_effect = _capture_claim
+
+    admin_mock = MagicMock()
+    admin_mock.table.side_effect = lambda name: {
+        "profiles": profiles_chain,
+        "venues": venues_chain,
+        "venue_claims": claims_chain,
+    }[name]
+    mock_admin.return_value = admin_mock
+
+    resp = venue_client.post(
+        "/api/v1/venues/mine",
+        json={"name": "Claim Link Venue", "zip_code": "10001"},
+    )
+
+    assert resp.status_code == 201
+    assert resp.json()["id"] == "v-claim-link"
+    assert captured_claims[0]["venue_id"] == "v-claim-link"
+    assert captured_claims[0]["user_id"] == "test-user-id"
+    assert captured_claims[0]["status"] == "approved"
+
+
 @patch("app.core.auth.get_managed_venue_ids", return_value=["v1"])
 @patch("app.routes.venues.get_supabase_admin_client")
 def test_update_venue_uses_admin_client(mock_admin, mock_ids, venue_client):
@@ -593,6 +644,54 @@ def test_create_artist_profile_claim_fallback_non_fatal(mock_admin, mock_user_sb
 
     assert resp.status_code == 201
     assert resp.json()["id"] == "a-new-2"
+
+
+@patch("app.routes.artists.get_managed_artist_ids", side_effect=[[], []])
+@patch("app.routes.artists.get_supabase_admin_client")
+def test_create_artist_links_with_claim_when_owner_id_is_missing(mock_admin, mock_managed_ids, artist_client):
+    created_row = {
+        "id": "a-claim-link", "stage_name": "Claim Link Artist", "genre": "indie",
+        "bio": None, "media_url": None, "cover_image_url": None,
+        "created_at": "2026-03-01T00:00:00+00:00",
+        "updated_at": "2026-03-01T00:00:00+00:00",
+    }
+
+    profiles_chain = _chain_mock([{"id": "test-user-id"}])
+    artists_chain = _chain_mock([created_row])
+    artists_chain.execute.side_effect = [
+        Exception('column "owner_id" does not exist'),  # owner insert path fails
+        _mock_supabase_response([created_row]),         # fallback insert without owner_id
+        Exception("owner link check failed"),           # owner link query
+        _mock_supabase_response(created_row),           # claim-linked reload
+    ]
+    claims_chain = _chain_mock([{"id": "claim-a-link"}])
+    captured_claims = []
+
+    def _capture_claim(payload):
+        UUID(payload["id"])
+        captured_claims.append(payload)
+        return claims_chain
+
+    claims_chain.insert.side_effect = _capture_claim
+
+    admin_mock = MagicMock()
+    admin_mock.table.side_effect = lambda name: {
+        "profiles": profiles_chain,
+        "artists": artists_chain,
+        "artist_claims": claims_chain,
+    }[name]
+    mock_admin.return_value = admin_mock
+
+    resp = artist_client.post(
+        "/api/v1/artists/mine",
+        json={"stage_name": "Claim Link Artist", "genre": "indie"},
+    )
+
+    assert resp.status_code == 201
+    assert resp.json()["id"] == "a-claim-link"
+    assert captured_claims[0]["artist_id"] == "a-claim-link"
+    assert captured_claims[0]["user_id"] == "test-user-id"
+    assert captured_claims[0]["status"] == "approved"
 
 
 @patch("app.core.auth.get_managed_artist_ids", return_value=["a1"])

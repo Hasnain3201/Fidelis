@@ -1,5 +1,5 @@
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -348,6 +348,7 @@ def create_artist_profile(
     claim_link_created = False
     try:
         admin.table("artist_claims").insert({
+            "id": str(uuid4()),
             "artist_id": artist_id,
             "user_id": auth.user_id,
             "status": "approved",
@@ -359,6 +360,7 @@ def create_artist_profile(
         try:
             user_client = get_supabase_client_for_user(auth.access_token)
             user_client.table("artist_claims").insert({
+                "id": str(uuid4()),
                 "artist_id": artist_id,
                 "user_id": auth.user_id,
                 "status": "pending",
