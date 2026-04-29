@@ -13,6 +13,7 @@ import { InterestedButton } from "@/components/interested-button";
 import { getEventArtists, getEventDetail, type EventArtist, type EventDetailResponse } from "@/lib/api";
 import { RecentlyViewedTracker } from "@/components/recently-viewed-tracker";
 import { EventReviews } from "@/components/event-reviews";
+import { EventReminder } from "@/components/event-reminder";
 
 import { getCoverImage } from "@/lib/cover-images";
 
@@ -125,7 +126,18 @@ export default async function EventDetailPage({ params }: EventDetailPageProps) 
               <div className="tagRow">
                 <span className="tagPill">{categoryLabel}</span>
                 <span className="tagPill">Live Event</span>
+                {event.age_requirement && (
+                  <span className="tagPill" style={{ background: "#fff3e0", color: "#e65100", border: "1px solid #ffcc80" }}>
+                    {event.age_requirement}
+                  </span>
+                )}
+                {event.price != null && (
+                  <span className="tagPill" style={{ background: "#e8f5e9", color: "#2e7d32", border: "1px solid #a5d6a7" }}>
+                    {event.price === 0 ? "Free" : `$${event.price}`}
+                  </span>
+                )}
               </div>
+
 
               <div className="eventDetailActions">
                 {event.ticket_url ? (

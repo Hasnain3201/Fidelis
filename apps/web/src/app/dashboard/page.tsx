@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { EventsCalendar } from "@/components/events-calendar";
+import { LiveyPointsCard } from "@/components/livey-points";
+import { InviteFriendCard } from "@/components/invite-friend";
 import {
   getMyProfile,
   listFavorites,
@@ -455,6 +457,14 @@ export default function UserDashboardPage() {
               ) : (
                 <EventsCalendar favorites={favorites} />
               )}
+            </div>
+
+            <div className="card" style={{ padding: 0, border: "none", background: "transparent" }}>
+              <LiveyPointsCard />
+            </div>
+
+            <div className="card" style={{ padding: 0, border: "none", background: "transparent" }}>
+              <InviteFriendCard />
             </div>
 
             <div className="card">
