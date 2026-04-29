@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any, List, Literal, Optional, cast
 from uuid import UUID
@@ -110,6 +111,38 @@ def _event_category(row: dict[str, Any]) -> str:
     return row.get("category") or "live-event"
 
 
+def _event_price_value(value: Any) -> float | None:
+    if value is None:
+        return None
+
+    if isinstance(value, bool):
+        return None
+
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if not normalized:
+            return None
+        if "free" in normalized:
+            return 0.0
+
+        match = re.search(r"\d+(?:\.\d+)?", normalized)
+        if not match:
+            return None
+        return float(match.group(0))
+
+    if isinstance(value, dict):
+        for key in ("amount", "min", "price"):
+            parsed = _event_price_value(value.get(key))
+            if parsed is not None:
+                return parsed
+        return _event_price_value(value.get("text"))
+
+    return None
+
+
 def _event_summary_from_row(row: dict[str, Any]) -> EventSummary:
     return EventSummary(
         id=str(row["id"]),
@@ -120,7 +153,7 @@ def _event_summary_from_row(row: dict[str, Any]) -> EventSummary:
         zip_code=_event_zip_code(row),
         is_promoted=bool(row.get("is_promoted", False)),
         cover_image_url=row.get("cover_image_url"),
-        price=row.get("price"),
+        price=_event_price_value(row.get("price")),
     )
 
 
@@ -601,7 +634,7 @@ def get_event(event_id: str):
         zip_code=_event_zip_code(row),
         ticket_url=row.get("ticket_url"),
         cover_image_url=row.get("cover_image_url"),
-        price=row.get("price"),
+        price=_event_price_value(row.get("price")),
         age_requirement=row.get("age_requirement"),
         capacity=row.get("capacity"),
     )

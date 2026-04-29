@@ -1,5 +1,8 @@
+from __future__ import annotations
+
+import re
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -26,6 +29,28 @@ router = APIRouter()
 
 _VENUE_COLS = "id,name,description,address_line,city,state,zip_code,verified,cover_image_url,created_at,updated_at"
 _VENUE_COLS_LEGACY = "id,name,description,address_line,city,state,zip_code,verified,created_at,updated_at"
+
+
+def _event_price_value(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if not normalized:
+            return None
+        if "free" in normalized:
+            return 0.0
+        match = re.search(r"\d+(?:\.\d+)?", normalized)
+        return float(match.group(0)) if match else None
+    if isinstance(value, dict):
+        for key in ("amount", "min", "price"):
+            parsed = _event_price_value(value.get(key))
+            if parsed is not None:
+                return parsed
+        return _event_price_value(value.get("text"))
+    return None
 
 
 def _is_missing_column_error(exc: Exception, column: str) -> bool:
@@ -337,7 +362,7 @@ def get_my_venue_events(
             start_time=row["start_time"],
             category=row["category"],
             zip_code=row["zip_code"],
-            price=row.get("price"),
+            price=_event_price_value(row.get("price")),
         )
         for row in rows
     ]
@@ -555,7 +580,7 @@ def get_venue_events(
             category=row["category"],
             zip_code=row["zip_code"],
             is_promoted=bool(row.get("is_promoted", False)),
-            price=row.get("price"),
+            price=_event_price_value(row.get("price")),
         )
         for row in rows
     ]

@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from typing import Optional
+from typing import Any, Optional
 from unittest.mock import MagicMock, patch
 
 from app.services.scraper.utils import map_event_to_supabase
@@ -15,7 +15,7 @@ def _event(
     start: datetime,
     zip_code: Optional[str] = "10001",
     venue_zip_code: Optional[str] = None,
-    price: Optional[float] = None,
+    price: Any = None,
 ):
     return {
         "id": event_id,
@@ -164,7 +164,7 @@ def test_search_includes_price_in_summary(mock_get_client, mock_build_event_quer
             venue="Blue Room",
             category="live-music",
             start=now + timedelta(days=1),
-            price=25.0,
+            price={"amount": 25.0, "currency": "USD"},
         )
     ]
 
